@@ -1,0 +1,26 @@
+# Virtual environment
+.venv/
+
+# Environment secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Test output and generated fixtures (can be regenerated)
+tests/output/
+tests/fixtures/*.wav
+tests/fixtures/*.json
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp

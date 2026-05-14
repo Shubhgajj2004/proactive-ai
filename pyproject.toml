@@ -1,0 +1,39 @@
+[project]
+name = "proactive-ai"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pipecat-ai[daily,silero]",     # silero: Pipecat's built-in SileroVADAnalyzer
+    "fastapi",
+    "uvicorn[standard]",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "mem0ai",
+    "asyncpg",
+    "redis[hiredis]",
+    "google-generativeai",           # ONLY in: stt/gemini.py, tts/gemini.py, embeddings/google.py
+    "openai",                        # ONLY in: llm/openrouter.py (OpenRouter OpenAI-compat API)
+    "numpy",                         # audio_gain.py — PCM int16 amplification
+    "mcp",
+    "speechbrain",                   # ECAPA-TDNN speaker embeddings
+    "torch",
+    "torchaudio",
+    "httpx",                         # MCP HTTP transport + Daily REST API calls
+    "python-multipart",              # FastAPI file upload for /api/enroll
+    "pydantic",
+    "pydantic-settings",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "sounddevice",      # real-time mic input for VAD test (Block 2 --mic mode)
+]
