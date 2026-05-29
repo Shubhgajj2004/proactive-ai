@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Example alternative: TTS_MODEL = "gemini-2.0-flash-tts"
 
     # ── Embeddings (direct Google SDK) ──────────────────────────────────────
-    EMBEDDING_MODEL: str = "text-embedding-004"  # 768-dim
+    EMBEDDING_MODEL: str = "gemini-embedding-001"  # 768-dim
 
     # ── Infrastructure ───────────────────────────────────────────────────────
     DATABASE_URL: str = "postgresql://proactive:proactive@localhost:5432/proactive_ai"

@@ -1,0 +1,143 @@
+[
+  {
+    "name": "book_restaurant",
+    "description": "Book a table at a restaurant for a given date, time, and party size",
+    "call_type": "write",
+    "domain": "dining",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "restaurant": {"type": "string"},
+        "date": {"type": "string"},
+        "time": {"type": "string"},
+        "party_size": {"type": "integer"}
+      },
+      "required": ["restaurant", "date", "time", "party_size"]
+    }
+  },
+  {
+    "name": "book_cab",
+    "description": "Book a cab or ride to a destination at a specified time",
+    "call_type": "write",
+    "domain": "transport",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "destination": {"type": "string"},
+        "pickup_time": {"type": "string"},
+        "pickup_location": {"type": "string"}
+      },
+      "required": ["destination", "pickup_time"]
+    }
+  },
+  {
+    "name": "send_whatsapp",
+    "description": "Send a WhatsApp message to a contact",
+    "call_type": "write",
+    "domain": "messaging",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "contact": {"type": "string"},
+        "message": {"type": "string"}
+      },
+      "required": ["contact", "message"]
+    }
+  },
+  {
+    "name": "make_phone_call",
+    "description": "Initiate a phone call to a contact",
+    "call_type": "write",
+    "domain": "communication",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "contact": {"type": "string"}
+      },
+      "required": ["contact"]
+    }
+  },
+  {
+    "name": "set_reminder",
+    "description": "Set a reminder or alarm for a specific time with a message",
+    "call_type": "write",
+    "domain": "productivity",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "message": {"type": "string"},
+        "time": {"type": "string"}
+      },
+      "required": ["message", "time"]
+    }
+  },
+  {
+    "name": "play_music",
+    "description": "Play a song, artist, playlist, or genre on the music streaming service",
+    "call_type": "write",
+    "domain": "entertainment",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string"},
+        "service": {"type": "string", "default": "spotify"}
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "weather_fetch",
+    "description": "Get current weather or forecast for a location",
+    "call_type": "read",
+    "domain": "information",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "location": {"type": "string"},
+        "days": {"type": "integer", "default": 1}
+      },
+      "required": ["location"]
+    }
+  },
+  {
+    "name": "contacts_lookup",
+    "description": "Look up a contact's phone number or email address by name",
+    "call_type": "read",
+    "domain": "contacts",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"}
+      },
+      "required": ["name"]
+    }
+  },
+  {
+    "name": "maps_search",
+    "description": "Search for a place, get directions or estimated travel time",
+    "call_type": "read",
+    "domain": "navigation",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string"},
+        "origin": {"type": "string"}
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "calendar_check",
+    "description": "Check the user's calendar for upcoming events or free slots",
+    "call_type": "read",
+    "domain": "productivity",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "date": {"type": "string"},
+        "range_days": {"type": "integer", "default": 1}
+      },
+      "required": ["date"]
+    }
+  }
+]

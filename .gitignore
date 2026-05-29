@@ -16,6 +16,8 @@ build/
 tests/output/
 tests/fixtures/*.wav
 tests/fixtures/*.json
+# Source fixtures (not generated — always track these)
+!tests/fixtures/mock_tools.json
 
 # macOS
 .DS_Store

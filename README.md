@@ -109,6 +109,22 @@ python scripts/enroll_user.py --user-id alice --audio tests/fixtures/input.wav
 
 ---
 
+### Block 10 — Tool Registry + Selector
+
+Requires Docker + migrated DB.
+
+```bash
+# Register mock tools
+python scripts/register_tools.py --tools tests/fixtures/mock_tools.json
+
+# Run semantic search test
+python tests/test_tool_selector.py
+```
+
+Expected: `6/6 passed`
+
+---
+
 ### Block 9 — Context Writer
 
 Requires Docker + migrated DB.
