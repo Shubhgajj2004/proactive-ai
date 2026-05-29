@@ -109,6 +109,18 @@ python scripts/enroll_user.py --user-id alice --audio tests/fixtures/input.wav
 
 ---
 
+### Block 12 — Proactive LangGraph
+
+Requires mock tools registered and mock MCP server available.
+
+```bash
+python tests/test_proactive_graph.py
+```
+
+Expected: `3/3 passed` — decline, single-step approve, multi-step approve.
+
+---
+
 ### Block 11 — Tool Executor
 
 ```bash
