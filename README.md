@@ -109,6 +109,18 @@ python scripts/enroll_user.py --user-id alice --audio tests/fixtures/input.wav
 
 ---
 
+### Block 9 — Context Writer
+
+Requires Docker + migrated DB.
+
+```bash
+python tests/test_context_writer.py
+```
+
+Expected: `4/4 passed`
+
+---
+
 ### Block 8 — Memory Writer (mem0 self-hosted)
 
 Requires Docker running and DB migrated.
