@@ -109,6 +109,16 @@ python scripts/enroll_user.py --user-id alice --audio tests/fixtures/input.wav
 
 ---
 
+### Block 13 — Reactive LangGraph
+
+```bash
+python tests/test_reactive_graph.py
+```
+
+Expected: `2/2 passed` — direct intent, ambiguous → clarify → execute.
+
+---
+
 ### Block 12 — Proactive LangGraph
 
 Requires mock tools registered and mock MCP server available.

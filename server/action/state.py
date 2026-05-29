@@ -32,5 +32,8 @@ class ActionSessionState(TypedDict):
     outcome:             str          # "confirmed" | "declined" | "timeout" | "completed"
 
     # ── Internal node communication (not persisted externally) ────────────────
-    _next_step:          str          # plan → tool_select
-    _selected_tools:     list[dict]   # tool_select → execute
+    _next_step:             str          # plan → tool_select
+    _selected_tools:        list[dict]   # tool_select → execute
+    _intent_clear:          bool         # intent_node → intent_router
+    _clarified:             bool         # clarification applied
+    _clarifying_question:   str          # emitted by intent_node if ambiguous
