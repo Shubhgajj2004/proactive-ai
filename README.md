@@ -109,6 +109,20 @@ python scripts/enroll_user.py --user-id alice --audio tests/fixtures/input.wav
 
 ---
 
+### Block 8 — Memory Writer (mem0 self-hosted)
+
+Requires Docker running and DB migrated.
+
+```bash
+docker compose up -d
+python scripts/migrate.py
+python tests/test_memory_writer.py
+```
+
+Expected: `5/5 passed` — full add → search → update → delete round-trip.
+
+---
+
 ### Block 7 — Ambient Processor
 
 **Mock (no API call):**

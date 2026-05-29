@@ -34,7 +34,7 @@ CONFIDENCE_THRESHOLD = 0.75   # above this → spawn ACTIVE session
 
 class MemoryOp(BaseModel):
     op:        Literal["add", "update", "delete"]
-    fact:      str
+    fact:      str = ""            # empty string allowed for delete ops
     memory_id: str | None = None   # required for update/delete
 
 
