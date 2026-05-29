@@ -22,7 +22,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- ── Wearer identity ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS user_voiceprints (
     user_id     TEXT PRIMARY KEY,
-    d_vector    vector(192) NOT NULL,
+    d_vector    vector(256) NOT NULL,
     enrolled_at TIMESTAMPTZ DEFAULT now()
 );
 

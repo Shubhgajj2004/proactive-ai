@@ -1,7 +1,8 @@
-"""Gemini STT backend — the ONLY file that imports google-generativeai for STT."""
+"""Gemini STT backend — the ONLY file that imports google-genai for STT."""
 import json
 
-import google.generativeai as genai
+import google.genai as genai
+from google.genai import types
 
 from server.prompts.stt import TRANSCRIBE
 from server.stt.client import STTClient, STTSegment
@@ -9,8 +10,8 @@ from server.stt.client import STTClient, STTSegment
 
 class GeminiSTTClient(STTClient):
     def __init__(self, model: str, api_key: str):
-        genai.configure(api_key=api_key)
         self._model_name = model
+        self._client = genai.Client(api_key=api_key)
         self._last_usage_tokens = 0
 
     @property
@@ -22,28 +23,31 @@ class GeminiSTTClient(STTClient):
         audio_bytes: bytes,
         sample_rate: int = 16000,
     ) -> list[STTSegment]:
-        model = genai.GenerativeModel(self._model_name)
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav")
+        text_part  = types.Part.from_text(text=TRANSCRIBE)
 
-        audio_part = {
-            "mime_type": "audio/wav",
-            "data": audio_bytes,
-        }
-
-        response = model.generate_content([audio_part, TRANSCRIBE])
+        response = await self._client.aio.models.generate_content(
+            model=self._model_name,
+            contents=[audio_part, text_part],
+        )
 
         # Track token usage
         if hasattr(response, "usage_metadata") and response.usage_metadata:
-            self._last_usage_tokens = response.usage_metadata.total_token_count
+            self._last_usage_tokens = response.usage_metadata.total_token_count or 0
         else:
             self._last_usage_tokens = 0
 
         raw = response.text.strip()
+
         # Strip markdown code fences if present
         if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
+            lines = raw.splitlines()
+            # Remove opening fence (```json or ```)
+            lines = lines[1:]
+            # Remove closing fence
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw = "\n".join(lines).strip()
 
         data = json.loads(raw)
         return [STTSegment(**item) for item in data]
