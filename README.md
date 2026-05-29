@@ -109,6 +109,16 @@ python scripts/enroll_user.py --user-id alice --audio tests/fixtures/input.wav
 
 ---
 
+### Block 11 — Tool Executor
+
+```bash
+python tests/test_tool_executor.py
+```
+
+Expected: `5/5 passed` — read retry, write no-retry, idempotency key verified.
+
+---
+
 ### Block 10 — Tool Registry + Selector
 
 Requires Docker + migrated DB.
