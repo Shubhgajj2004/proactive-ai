@@ -283,11 +283,10 @@
         <p>Hold the button while speaking, release to process.</p>
 
         <button class="record-btn" id="sessionRecordBtn"
-                onmousedown="startSession()" onmouseup="stopSession()"
-                ontouchstart="startSession()" ontouchend="stopSession()">🎙️</button>
+                onclick="toggleSession()">🎙️</button>
 
         <div class="timer" id="sessionTimer">0:00</div>
-        <div class="timer-label" id="sessionTimerLabel">Hold to speak</div>
+        <div class="timer-label" id="sessionTimerLabel">Click to speak</div>
 
         <canvas id="sessionWave"></canvas>
       </div>
@@ -492,8 +491,12 @@ let sessionRecording = false;
 let sessionStream = null;
 let sessionSeconds = 0;
 
+async function toggleSession() {
+  if (!sessionRecording) await startSession();
+  else stopSession();
+}
+
 async function startSession() {
-  if (sessionRecording) return;
   sessionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   audioChunks = [];
   mediaRecorder = new MediaRecorder(sessionStream);
@@ -502,6 +505,14 @@ async function startSession() {
     sessionBlob = new Blob(audioChunks, { type: 'audio/webm' });
     sessionStream.getTracks().forEach(t => t.stop());
     stopVisualiser('sessionWave');
+
+    // Guard: must be at least 1 second
+    if (sessionSeconds < 1) {
+      document.getElementById('sessionTimerLabel').textContent = 'Too short — try again';
+      document.getElementById('sessionRecordBtn').textContent = '🎙️';
+      document.getElementById('sessionTimer').textContent = '0:00';
+      return;
+    }
     await processAudio();
   };
   mediaRecorder.start();
@@ -510,7 +521,7 @@ async function startSession() {
 
   document.getElementById('sessionRecordBtn').className = 'record-btn recording';
   document.getElementById('sessionRecordBtn').textContent = '⏹';
-  document.getElementById('sessionTimerLabel').textContent = 'Recording…';
+  document.getElementById('sessionTimerLabel').textContent = 'Recording… click to stop';
 
   timerInterval = setInterval(() => {
     sessionSeconds++;

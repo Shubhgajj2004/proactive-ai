@@ -69,7 +69,7 @@ async def enroll(
 
     audio_bytes = await audio.read()
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
         f.write(audio_bytes)
         tmp = f.name
     try:
@@ -133,7 +133,12 @@ async def process_audio(
 
     audio_bytes = await audio.read()
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+    # Guard: browser sent empty blob (0s recording)
+    if len(audio_bytes) < 1000:
+        return JSONResponse({"transcript": "", "route": "SKIP", "reason": "recording too short"})
+
+    # Save with .webm suffix — browser MediaRecorder produces WebM, not WAV
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
         f.write(audio_bytes)
         tmp = f.name
     try:
