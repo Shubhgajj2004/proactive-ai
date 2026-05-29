@@ -1,34 +1,54 @@
-"""Gemini TTS backend — the ONLY file that imports google-generativeai for TTS."""
+"""Gemini TTS backend — the ONLY file that imports google-genai for TTS."""
 from typing import AsyncIterator
 
-import google.generativeai as genai
+import google.genai as genai
+from google.genai import types
 
 from server.tts.client import TTSClient
 
+SAMPLE_RATE = 24000   # Gemini TTS outputs 24kHz PCM L16
+VOICE_NAME  = "Aoede" # Natural-sounding voice
+
 
 class GeminiTTSClient(TTSClient):
-    def __init__(self, model: str, api_key: str):
-        genai.configure(api_key=api_key)
-        self._model_name = model
+    def __init__(self, model: str, api_key: str, voice: str = VOICE_NAME):
+        self._model  = model
+        self._voice  = voice
+        self._client = genai.Client(api_key=api_key)
+
+    @property
+    def sample_rate(self) -> int:
+        return SAMPLE_RATE
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
-        model = genai.GenerativeModel(self._model_name)
+        """
+        Synthesise text → raw int16 PCM bytes at 24kHz.
+        Yields the full blob as one chunk (Gemini TTS is non-streaming).
+        """
+        import asyncio
+        loop = asyncio.get_event_loop()
+        raw  = await loop.run_in_executor(None, self._synthesize_sync, text)
+        if raw:
+            yield raw
 
-        # Gemini TTS streams audio chunks
-        response = model.generate_content(
-            text,
-            stream=True,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="audio/pcm",
-                audio_encoding="LINEAR16",
-                sample_rate_hertz=16000,
-            ),
-        )
-
-        for chunk in response:
-            if hasattr(chunk, "audio") and chunk.audio:
-                yield chunk.audio
-            elif chunk.text:
-                # Some versions return base64-encoded audio as text
-                import base64
-                yield base64.b64decode(chunk.text)
+    def _synthesize_sync(self, text: str) -> bytes | None:
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=self._voice
+                            )
+                        )
+                    ),
+                ),
+            )
+            return response.candidates[0].content.parts[0].inline_data.data
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("[TTS] synthesis failed: %s", e)
+            return None

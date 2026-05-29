@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proactive AI — Test Console</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f0f0f;
+    color: #e8e8e8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 20px 32px;
+    border-bottom: 1px solid #222;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; color: #fff; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; }
+  .dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid #222;
+    padding: 0 32px;
+  }
+  .tab {
+    padding: 12px 20px;
+    cursor: pointer;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    font-size: 14px;
+    transition: color 0.2s;
+  }
+  .tab.active { color: #fff; border-bottom-color: #6366f1; }
+
+  .panel { display: none; padding: 32px; flex: 1; }
+  .panel.active { display: block; }
+
+  /* ── User ID bar ── */
+  .user-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 14px 18px;
+  }
+  .user-bar label { font-size: 13px; color: #888; white-space: nowrap; }
+  .user-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-size: 14px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .card p  { font-size: 13px; color: #777; margin-bottom: 18px; line-height: 1.5; }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary  { background: #6366f1; color: #fff; }
+  .btn-danger   { background: #ef4444; color: #fff; }
+  .btn-success  { background: #22c55e; color: #000; }
+  .btn-ghost    { background: #2a2a2a; color: #ccc; }
+
+  /* ── Record button ── */
+  .record-btn {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    transition: all 0.2s;
+    background: #2a2a2a;
+    color: #e8e8e8;
+    margin: 0 auto 12px;
+  }
+  .record-btn.recording {
+    background: #ef4444;
+    box-shadow: 0 0 0 8px rgba(239,68,68,0.2);
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 8px rgba(239,68,68,0.2); }
+    50%       { box-shadow: 0 0 0 16px rgba(239,68,68,0.05); }
+  }
+
+  /* ── Timer ── */
+  .timer {
+    text-align: center;
+    font-size: 28px;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .timer-label { text-align: center; font-size: 12px; color: #555; margin-bottom: 16px; }
+
+  /* ── Status pill ── */
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    background: #2a2a2a;
+    color: #888;
+  }
+  .status.success { background: #052e16; color: #4ade80; }
+  .status.error   { background: #2d0a0a; color: #f87171; }
+  .status.loading { background: #1e1a35; color: #818cf8; }
+
+  /* ── Transcript ── */
+  .transcript-box {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 8px;
+    padding: 16px;
+    min-height: 80px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #ccc;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Analysis card ── */
+  .analysis-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    align-items: flex-start;
+  }
+  .analysis-label {
+    color: #555;
+    min-width: 110px;
+    padding-top: 2px;
+  }
+  .analysis-value { color: #ddd; flex: 1; }
+  .confidence-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #2a2a2a;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #6366f1, #22c55e);
+    transition: width 0.4s ease;
+  }
+
+  /* ── Route badge ── */
+  .route-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .route-AMBIENT  { background: #1e3a5f; color: #60a5fa; }
+  .route-REACTIVE { background: #2d1b00; color: #fb923c; }
+  .route-ACTIVE   { background: #052e16; color: #4ade80; }
+  .route-SKIP     { background: #1a1a1a; color: #555; }
+
+  /* ── Waveform ── */
+  canvas { width: 100%; height: 48px; border-radius: 6px; display: block; }
+
+  /* ── Grid ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  hr { border: none; border-top: 1px solid #222; margin: 20px 0; }
+
+  .small { font-size: 12px; color: #555; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="serverDot"></div>
+  <h1>Proactive AI — Test Console</h1>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('enroll')">① Enrollment</div>
+  <div class="tab"        onclick="switchTab('session')">② Live Session</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- PANEL 1: Enrollment                                        -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div id="panel-enroll" class="panel active">
+
+  <div class="user-bar">
+    <label>User ID</label>
+    <input id="enrollUserId" type="text" value="wearer" placeholder="your_username" />
+  </div>
+
+  <div class="card">
+    <h2>Record your voice</h2>
+    <p>Speak naturally for 5–10 seconds. This voice sample will be used to identify you during live sessions.</p>
+
+    <button class="record-btn" id="enrollRecordBtn" onclick="toggleEnrollRecord()">🎙️</button>
+    <div class="timer" id="enrollTimer">0:00</div>
+    <div class="timer-label" id="enrollTimerLabel">Click to start recording</div>
+
+    <canvas id="enrollWave"></canvas>
+    <br>
+
+    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-primary" id="enrollSubmitBtn" onclick="submitEnrollment()" disabled>
+        ✓ Save Voiceprint
+      </button>
+      <button class="btn btn-ghost" onclick="playEnrollRecording()" id="enrollPlayBtn" disabled>
+        ▶ Preview
+      </button>
+    </div>
+
+    <br>
+    <div id="enrollStatus"></div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- PANEL 2: Live Session                                      -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div id="panel-session" class="panel">
+
+  <div class="user-bar">
+    <label>User ID</label>
+    <input id="sessionUserId" type="text" value="wearer" placeholder="your_username" />
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Left: record + send -->
+    <div>
+      <div class="card">
+        <h2>Push to talk</h2>
+        <p>Hold the button while speaking, release to process.</p>
+
+        <button class="record-btn" id="sessionRecordBtn"
+                onmousedown="startSession()" onmouseup="stopSession()"
+                ontouchstart="startSession()" ontouchend="stopSession()">🎙️</button>
+
+        <div class="timer" id="sessionTimer">0:00</div>
+        <div class="timer-label" id="sessionTimerLabel">Hold to speak</div>
+
+        <canvas id="sessionWave"></canvas>
+      </div>
+    </div>
+
+    <!-- Right: results -->
+    <div>
+      <div class="card">
+        <h2>Transcript</h2>
+        <div class="transcript-box" id="transcriptBox">—</div>
+      </div>
+
+      <div class="card" id="analysisCard" style="display:none">
+        <h2>AI Analysis</h2>
+        <div id="analysisContent"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- TTS playback -->
+  <div class="card" id="ttsCard" style="display:none">
+    <h2>Assistant Response</h2>
+    <div id="ttsText" style="font-size:15px; color:#c4b5fd; margin-bottom:12px;"></div>
+    <audio id="ttsAudio" controls style="width:100%"></audio>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <h2>Log</h2>
+    <div id="logBox" class="transcript-box" style="max-height:180px; overflow-y:auto; font-size:12px;"></div>
+  </div>
+
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+const API = '';   // same origin
+let mediaRecorder, audioChunks = [], recordingTimer, timerInterval;
+let enrollBlob = null, sessionBlob = null;
+let analyserNode = null, animFrame = null;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['enroll','session'][i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+function setStatus(el, msg, type='') {
+  el.innerHTML = `<span class="status ${type}">${msg}</span>`;
+}
+
+function log(msg) {
+  const box = document.getElementById('logBox');
+  const line = document.createElement('div');
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function formatTime(sec) {
+  return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+}
+
+// ── Server health ─────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(API + '/api/health');
+    document.getElementById('serverDot').className = r.ok ? 'dot online' : 'dot';
+  } catch { document.getElementById('serverDot').className = 'dot'; }
+}
+checkHealth();
+setInterval(checkHealth, 5000);
+
+// ── Waveform visualiser ───────────────────────────────────────────────────────
+function startVisualiser(stream, canvasId) {
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(stream);
+  analyserNode = ctx.createAnalyser();
+  analyserNode.fftSize = 256;
+  src.connect(analyserNode);
+
+  const canvas = document.getElementById(canvasId);
+  const c = canvas.getContext('2d');
+  const buf = new Uint8Array(analyserNode.frequencyBinCount);
+
+  function draw() {
+    animFrame = requestAnimationFrame(draw);
+    analyserNode.getByteTimeDomainData(buf);
+    c.clearRect(0,0,canvas.width,canvas.height);
+    c.fillStyle = '#111';
+    c.fillRect(0,0,canvas.width,canvas.height);
+    c.strokeStyle = '#6366f1';
+    c.lineWidth = 2;
+    c.beginPath();
+    const slice = canvas.width / buf.length;
+    let x = 0;
+    buf.forEach((v,i) => {
+      const y = (v/128)*canvas.height/2;
+      i === 0 ? c.moveTo(x,y) : c.lineTo(x,y);
+      x += slice;
+    });
+    c.stroke();
+  }
+  draw();
+}
+
+function stopVisualiser(canvasId) {
+  if(animFrame) cancelAnimationFrame(animFrame);
+  const c = document.getElementById(canvasId).getContext('2d');
+  const canvas = document.getElementById(canvasId);
+  c.clearRect(0,0,canvas.width,canvas.height);
+  c.fillStyle='#111';
+  c.fillRect(0,0,canvas.width,canvas.height);
+}
+
+// ── Enrollment recording ──────────────────────────────────────────────────────
+let enrollRecording = false;
+let enrollSeconds = 0;
+
+async function toggleEnrollRecord() {
+  if (!enrollRecording) await startEnrollRecord();
+  else stopEnrollRecord();
+}
+
+async function startEnrollRecord() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+  mediaRecorder.onstop = () => {
+    enrollBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    document.getElementById('enrollSubmitBtn').disabled = false;
+    document.getElementById('enrollPlayBtn').disabled = false;
+    stream.getTracks().forEach(t => t.stop());
+    stopVisualiser('enrollWave');
+  };
+  mediaRecorder.start();
+  enrollRecording = true;
+  enrollSeconds = 0;
+
+  document.getElementById('enrollRecordBtn').className = 'record-btn recording';
+  document.getElementById('enrollRecordBtn').textContent = '⏹';
+  document.getElementById('enrollTimerLabel').textContent = 'Recording… click to stop';
+
+  timerInterval = setInterval(() => {
+    enrollSeconds++;
+    document.getElementById('enrollTimer').textContent = formatTime(enrollSeconds);
+  }, 1000);
+
+  startVisualiser(stream, 'enrollWave');
+}
+
+function stopEnrollRecord() {
+  mediaRecorder.stop();
+  enrollRecording = false;
+  clearInterval(timerInterval);
+  document.getElementById('enrollRecordBtn').className = 'record-btn';
+  document.getElementById('enrollRecordBtn').textContent = '🎙️';
+  document.getElementById('enrollTimerLabel').textContent = 'Recording saved — submit or re-record';
+}
+
+function playEnrollRecording() {
+  if (!enrollBlob) return;
+  const url = URL.createObjectURL(enrollBlob);
+  const a = new Audio(url);
+  a.play();
+}
+
+async function submitEnrollment() {
+  if (!enrollBlob) return;
+  const userId = document.getElementById('enrollUserId').value.trim();
+  if (!userId) { alert('Enter a user ID'); return; }
+
+  const statusEl = document.getElementById('enrollStatus');
+  setStatus(statusEl, 'Uploading…', 'loading');
+  document.getElementById('enrollSubmitBtn').disabled = true;
+
+  const form = new FormData();
+  form.append('user_id', userId);
+  form.append('audio', enrollBlob, 'enrollment.webm');
+
+  try {
+    const r = await fetch(API + '/api/enroll', { method: 'POST', body: form });
+    const data = await r.json();
+    if (r.ok) {
+      setStatus(statusEl, `✓ Enrolled as "${data.user_id}" (${data.duration_s}s)`, 'success');
+      // Auto-fill session user ID
+      document.getElementById('sessionUserId').value = userId;
+    } else {
+      setStatus(statusEl, `✗ ${data.detail || 'Enrollment failed'}`, 'error');
+    }
+  } catch(e) {
+    setStatus(statusEl, `✗ Network error: ${e.message}`, 'error');
+  }
+  document.getElementById('enrollSubmitBtn').disabled = false;
+}
+
+// ── Session recording ─────────────────────────────────────────────────────────
+let sessionRecording = false;
+let sessionStream = null;
+let sessionSeconds = 0;
+
+async function startSession() {
+  if (sessionRecording) return;
+  sessionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  audioChunks = [];
+  mediaRecorder = new MediaRecorder(sessionStream);
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+  mediaRecorder.onstop = async () => {
+    sessionBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    sessionStream.getTracks().forEach(t => t.stop());
+    stopVisualiser('sessionWave');
+    await processAudio();
+  };
+  mediaRecorder.start();
+  sessionRecording = true;
+  sessionSeconds = 0;
+
+  document.getElementById('sessionRecordBtn').className = 'record-btn recording';
+  document.getElementById('sessionRecordBtn').textContent = '⏹';
+  document.getElementById('sessionTimerLabel').textContent = 'Recording…';
+
+  timerInterval = setInterval(() => {
+    sessionSeconds++;
+    document.getElementById('sessionTimer').textContent = formatTime(sessionSeconds);
+  }, 1000);
+
+  startVisualiser(sessionStream, 'sessionWave');
+}
+
+function stopSession() {
+  if (!sessionRecording) return;
+  sessionRecording = false;
+  clearInterval(timerInterval);
+  mediaRecorder.stop();
+  document.getElementById('sessionRecordBtn').className = 'record-btn';
+  document.getElementById('sessionRecordBtn').textContent = '⏳';
+  document.getElementById('sessionTimerLabel').textContent = 'Processing…';
+}
+
+async function processAudio() {
+  const userId = document.getElementById('sessionUserId').value.trim() || 'wearer';
+  log(`Sending audio (${sessionSeconds}s) for user=${userId}`);
+
+  const form = new FormData();
+  form.append('user_id', userId);
+  form.append('audio', sessionBlob, 'utterance.webm');
+
+  try {
+    const r = await fetch(API + '/api/process', { method: 'POST', body: form });
+    const data = await r.json();
+
+    if (!r.ok) {
+      log(`✗ Error: ${data.detail}`);
+      document.getElementById('sessionTimerLabel').textContent = 'Error — try again';
+      return;
+    }
+
+    // Transcript
+    document.getElementById('transcriptBox').textContent = data.transcript || '(no speech detected)';
+    log(`Route: ${data.route} | Wearer: ${data.wearer_label || 'unknown'}`);
+
+    // Analysis
+    if (data.analysis) {
+      showAnalysis(data.analysis, data.route);
+    } else {
+      document.getElementById('analysisCard').style.display = 'none';
+    }
+
+    // TTS
+    if (data.tts_audio) {
+      showTTS(data.tts_audio, data.tts_text);
+    } else {
+      document.getElementById('ttsCard').style.display = 'none';
+    }
+
+  } catch(e) {
+    log(`✗ Network error: ${e.message}`);
+  }
+
+  document.getElementById('sessionRecordBtn').textContent = '🎙️';
+  document.getElementById('sessionTimerLabel').textContent = 'Hold to speak';
+  document.getElementById('sessionTimer').textContent = '0:00';
+}
+
+function showAnalysis(a, routeDecision) {
+  const card = document.getElementById('analysisCard');
+  const content = document.getElementById('analysisContent');
+  card.style.display = 'block';
+
+  const routeClass = `route-${routeDecision}`;
+  const confidence = Math.round((a.confidence || 0) * 100);
+  const actEmoji = a.should_act ? '🟢 Yes' : '⚪ No';
+
+  content.innerHTML = `
+    <div class="analysis-row">
+      <span class="analysis-label">Route</span>
+      <span class="analysis-value"><span class="route-badge ${routeClass}">${routeDecision}</span></span>
+    </div>
+    <div class="analysis-row">
+      <span class="analysis-label">Summary</span>
+      <span class="analysis-value">${a.summary || '—'}</span>
+    </div>
+    <div class="analysis-row">
+      <span class="analysis-label">Should act</span>
+      <span class="analysis-value">${actEmoji}</span>
+    </div>
+    <div class="analysis-row">
+      <span class="analysis-label">Confidence</span>
+      <span class="analysis-value">
+        ${confidence}%
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${confidence}%"></div></div>
+      </span>
+    </div>
+    ${a.consent_prompt ? `
+    <div class="analysis-row">
+      <span class="analysis-label">Would say</span>
+      <span class="analysis-value" style="color:#c4b5fd;font-style:italic;">"${a.consent_prompt}"</span>
+    </div>` : ''}
+    ${a.memory_operations?.length ? `
+    <div class="analysis-row">
+      <span class="analysis-label">Memory ops</span>
+      <span class="analysis-value">${a.memory_operations.map(o => `[${o.op}] ${o.fact}`).join('<br>')}</span>
+    </div>` : ''}
+  `;
+}
+
+function showTTS(b64wav, text) {
+  document.getElementById('ttsCard').style.display = 'block';
+  document.getElementById('ttsText').textContent = `"${text}"`;
+  const audio = document.getElementById('ttsAudio');
+  const blob  = new Blob([Uint8Array.from(atob(b64wav), c => c.charCodeAt(0))], { type: 'audio/wav' });
+  audio.src   = URL.createObjectURL(blob);
+  audio.play().catch(() => {});  // auto-play (may need user gesture)
+}
+</script>
+</body>
+</html>
