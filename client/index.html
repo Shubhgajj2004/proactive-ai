@@ -97,7 +97,7 @@
   .btn-success  { background: #22c55e; color: #000; }
   .btn-ghost    { background: #2a2a2a; color: #ccc; }
 
-  /* ── Record button ── */
+  /* ── Record button (enrollment) ── */
   .record-btn {
     width: 80px; height: 80px;
     border-radius: 50%;
@@ -147,13 +147,54 @@
   .status.error   { background: #2d0a0a; color: #f87171; }
   .status.loading { background: #1e1a35; color: #818cf8; }
 
+  /* ── VAD status banner ── */
+  .vad-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 24px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid #2a2a2a;
+    background: #1a1a1a;
+    transition: all 0.3s;
+  }
+  .vad-banner.listening  { border-color: #334155; }
+  .vad-banner.speaking   { border-color: #1d4ed8; background: #0f172a; animation: speakpulse 1s infinite; }
+  .vad-banner.processing { border-color: #7c3aed; background: #1e1035; }
+  .vad-banner.offline    { border-color: #3f3f46; opacity: 0.6; }
+
+  @keyframes speakpulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.2); }
+    50%      { box-shadow: 0 0 0 8px rgba(99,102,241,0.0); }
+  }
+
+  .vad-icon { font-size: 28px; }
+  .vad-label { font-size: 15px; font-weight: 600; color: #fff; }
+  .vad-sub   { font-size: 12px; color: #666; margin-top: 2px; }
+
+  /* ── Session start/stop ── */
+  .session-btn {
+    padding: 12px 32px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .session-btn.start { background: #22c55e; color: #000; }
+  .session-btn.start:hover { background: #16a34a; }
+  .session-btn.stop  { background: #ef4444; color: #fff; }
+  .session-btn.stop:hover  { background: #dc2626; }
+
   /* ── Transcript ── */
   .transcript-box {
     background: #111;
     border: 1px solid #222;
     border-radius: 8px;
     padding: 16px;
-    min-height: 80px;
+    min-height: 60px;
     font-size: 14px;
     line-height: 1.6;
     color: #ccc;
@@ -162,7 +203,44 @@
     word-break: break-word;
   }
 
-  /* ── Analysis card ── */
+  /* ── Result feed ── */
+  .result-feed { display: flex; flex-direction: column; gap: 16px; }
+
+  .result-card {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 16px 20px;
+    animation: slidein 0.25s ease;
+  }
+  @keyframes slidein {
+    from { opacity:0; transform: translateY(-8px); }
+    to   { opacity:1; transform: translateY(0); }
+  }
+
+  .result-card .rc-time { font-size: 11px; color: #444; margin-bottom: 8px; }
+  .result-card .rc-transcript { font-size: 13px; color: #ccc; font-family: monospace; margin-bottom: 10px; line-height: 1.5; }
+
+  .result-card .rc-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+
+  .result-card .rc-suggestion {
+    font-size: 13px;
+    color: #c4b5fd;
+    font-style: italic;
+    background: #1c0f3f;
+    border: 1px solid #4c1d95;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-top: 8px;
+  }
+
+  .result-card .rc-conf {
+    font-size: 11px;
+    color: #555;
+    margin-top: 6px;
+  }
+
+  /* ── Analysis ── */
   .analysis-row {
     display: flex;
     gap: 10px;
@@ -170,11 +248,7 @@
     font-size: 13px;
     align-items: flex-start;
   }
-  .analysis-label {
-    color: #555;
-    min-width: 110px;
-    padding-top: 2px;
-  }
+  .analysis-label { color: #555; min-width: 110px; padding-top: 2px; }
   .analysis-value { color: #ddd; flex: 1; }
   .confidence-bar {
     height: 6px;
@@ -212,7 +286,6 @@
   @media(max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 
   hr { border: none; border-top: 1px solid #222; margin: 20px 0; }
-
   .small { font-size: 12px; color: #555; }
 </style>
 </head>
@@ -265,7 +338,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════ -->
-<!-- PANEL 2: Live Session                                      -->
+<!-- PANEL 2: Live Session (continuous VAD)                    -->
 <!-- ══════════════════════════════════════════════════════════ -->
 <div id="panel-session" class="panel">
 
@@ -274,64 +347,36 @@
     <input id="sessionUserId" type="text" value="wearer" placeholder="your_username" />
   </div>
 
-  <div class="grid-2">
-
-    <!-- Left: record + send -->
+  <!-- VAD status banner -->
+  <div class="vad-banner offline" id="vadBanner">
+    <div class="vad-icon" id="vadIcon">🔇</div>
     <div>
-      <div class="card">
-        <h2>Push to talk</h2>
-        <p>Hold the button while speaking, release to process.</p>
-
-        <button class="record-btn" id="sessionRecordBtn"
-                onclick="toggleSession()">🎙️</button>
-
-        <div class="timer" id="sessionTimer">0:00</div>
-        <div class="timer-label" id="sessionTimerLabel">Click to speak</div>
-
-        <canvas id="sessionWave"></canvas>
-      </div>
+      <div class="vad-label" id="vadLabel">Session not started</div>
+      <div class="vad-sub"   id="vadSub">Click Start Session to begin continuous listening</div>
     </div>
-
-    <!-- Right: results -->
-    <div>
-      <div class="card">
-        <h2>Transcript</h2>
-        <div class="transcript-box" id="transcriptBox">—</div>
-      </div>
-
-      <div class="card" id="analysisCard" style="display:none">
-        <h2>AI Analysis</h2>
-        <div id="analysisContent"></div>
-      </div>
+    <div style="margin-left:auto;">
+      <button class="session-btn start" id="sessionToggleBtn" onclick="toggleSession()">▶ Start Session</button>
     </div>
-
   </div>
 
-  <!-- TTS playback -->
-  <div class="card" id="ttsCard" style="display:none">
-    <h2>Assistant Response</h2>
-    <div id="ttsText" style="font-size:15px; color:#c4b5fd; margin-bottom:12px;"></div>
-    <audio id="ttsAudio" controls style="width:100%"></audio>
+  <!-- Live waveform -->
+  <div class="card" style="padding:16px;">
+    <canvas id="sessionWave"></canvas>
   </div>
 
-  <!-- Log -->
-  <div class="card">
-    <h2>Log</h2>
-    <div id="logBox" class="transcript-box" style="max-height:180px; overflow-y:auto; font-size:12px;"></div>
-  </div>
+  <!-- Result feed -->
+  <div id="resultFeed" class="result-feed"></div>
 
 </div>
 
 <script>
-// ── State ────────────────────────────────────────────────────────────────────
-const API = '';   // same origin
-let mediaRecorder, audioChunks = [], recordingTimer, timerInterval;
-let enrollBlob = null, sessionBlob = null;
-let analyserNode = null, animFrame = null;
+// ─────────────────────────────────────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['enroll','session'][i] === name));
+  document.querySelectorAll('.tab').forEach((t,i) =>
+    t.classList.toggle('active', ['enroll','session'][i] === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
 }
@@ -340,73 +385,67 @@ function setStatus(el, msg, type='') {
   el.innerHTML = `<span class="status ${type}">${msg}</span>`;
 }
 
-function log(msg) {
-  const box = document.getElementById('logBox');
-  const line = document.createElement('div');
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  box.appendChild(line);
-  box.scrollTop = box.scrollHeight;
-}
-
 function formatTime(sec) {
   return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
 }
 
-// ── Server health ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Server health
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function checkHealth() {
   try {
-    const r = await fetch(API + '/api/health');
+    const r = await fetch('/api/health');
     document.getElementById('serverDot').className = r.ok ? 'dot online' : 'dot';
   } catch { document.getElementById('serverDot').className = 'dot'; }
 }
 checkHealth();
 setInterval(checkHealth, 5000);
 
-// ── Waveform visualiser ───────────────────────────────────────────────────────
-function startVisualiser(stream, canvasId) {
-  const ctx = new AudioContext();
-  const src = ctx.createMediaStreamSource(stream);
-  analyserNode = ctx.createAnalyser();
-  analyserNode.fftSize = 256;
-  src.connect(analyserNode);
+// ─────────────────────────────────────────────────────────────────────────────
+// Waveform visualiser (for enrollment)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const canvas = document.getElementById(canvasId);
+let enrollVisCtx = null, enrollVisFrame = null;
+
+function startEnrollVisualiser(stream) {
+  const actx = new AudioContext();
+  const src   = actx.createMediaStreamSource(stream);
+  const analyser = actx.createAnalyser();
+  analyser.fftSize = 256;
+  src.connect(analyser);
+
+  const canvas = document.getElementById('enrollWave');
   const c = canvas.getContext('2d');
-  const buf = new Uint8Array(analyserNode.frequencyBinCount);
+  const buf = new Uint8Array(analyser.frequencyBinCount);
 
   function draw() {
-    animFrame = requestAnimationFrame(draw);
-    analyserNode.getByteTimeDomainData(buf);
+    enrollVisFrame = requestAnimationFrame(draw);
+    analyser.getByteTimeDomainData(buf);
     c.clearRect(0,0,canvas.width,canvas.height);
-    c.fillStyle = '#111';
-    c.fillRect(0,0,canvas.width,canvas.height);
-    c.strokeStyle = '#6366f1';
-    c.lineWidth = 2;
-    c.beginPath();
-    const slice = canvas.width / buf.length;
-    let x = 0;
-    buf.forEach((v,i) => {
-      const y = (v/128)*canvas.height/2;
-      i === 0 ? c.moveTo(x,y) : c.lineTo(x,y);
-      x += slice;
-    });
+    c.fillStyle='#111'; c.fillRect(0,0,canvas.width,canvas.height);
+    c.strokeStyle='#6366f1'; c.lineWidth=2; c.beginPath();
+    const sl = canvas.width / buf.length; let x=0;
+    buf.forEach((v,i)=>{ const y=(v/128)*canvas.height/2; i===0?c.moveTo(x,y):c.lineTo(x,y); x+=sl; });
     c.stroke();
   }
   draw();
 }
 
-function stopVisualiser(canvasId) {
-  if(animFrame) cancelAnimationFrame(animFrame);
-  const c = document.getElementById(canvasId).getContext('2d');
-  const canvas = document.getElementById(canvasId);
+function stopEnrollVisualiser() {
+  if(enrollVisFrame) cancelAnimationFrame(enrollVisFrame);
+  const canvas = document.getElementById('enrollWave');
+  const c = canvas.getContext('2d');
   c.clearRect(0,0,canvas.width,canvas.height);
-  c.fillStyle='#111';
-  c.fillRect(0,0,canvas.width,canvas.height);
+  c.fillStyle='#111'; c.fillRect(0,0,canvas.width,canvas.height);
 }
 
-// ── Enrollment recording ──────────────────────────────────────────────────────
-let enrollRecording = false;
-let enrollSeconds = 0;
+// ─────────────────────────────────────────────────────────────────────────────
+// Enrollment
+// ─────────────────────────────────────────────────────────────────────────────
+
+let enrollRecording=false, enrollMediaRecorder=null, enrollChunks=[], enrollBlob=null;
+let enrollTimerInterval=null, enrollSeconds=0;
 
 async function toggleEnrollRecord() {
   if (!enrollRecording) await startEnrollRecord();
@@ -415,46 +454,44 @@ async function toggleEnrollRecord() {
 
 async function startEnrollRecord() {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  audioChunks = [];
-  mediaRecorder = new MediaRecorder(stream);
-  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-  mediaRecorder.onstop = () => {
-    enrollBlob = new Blob(audioChunks, { type: 'audio/webm' });
+  enrollChunks = [];
+  enrollMediaRecorder = new MediaRecorder(stream);
+  enrollMediaRecorder.ondataavailable = e => enrollChunks.push(e.data);
+  enrollMediaRecorder.onstop = () => {
+    enrollBlob = new Blob(enrollChunks, { type:'audio/webm' });
     document.getElementById('enrollSubmitBtn').disabled = false;
-    document.getElementById('enrollPlayBtn').disabled = false;
+    document.getElementById('enrollPlayBtn').disabled   = false;
     stream.getTracks().forEach(t => t.stop());
-    stopVisualiser('enrollWave');
+    stopEnrollVisualiser();
   };
-  mediaRecorder.start();
+  enrollMediaRecorder.start();
   enrollRecording = true;
-  enrollSeconds = 0;
+  enrollSeconds   = 0;
 
-  document.getElementById('enrollRecordBtn').className = 'record-btn recording';
+  document.getElementById('enrollRecordBtn').className   = 'record-btn recording';
   document.getElementById('enrollRecordBtn').textContent = '⏹';
   document.getElementById('enrollTimerLabel').textContent = 'Recording… click to stop';
 
-  timerInterval = setInterval(() => {
+  enrollTimerInterval = setInterval(() => {
     enrollSeconds++;
     document.getElementById('enrollTimer').textContent = formatTime(enrollSeconds);
   }, 1000);
 
-  startVisualiser(stream, 'enrollWave');
+  startEnrollVisualiser(stream);
 }
 
 function stopEnrollRecord() {
-  mediaRecorder.stop();
+  enrollMediaRecorder.stop();
   enrollRecording = false;
-  clearInterval(timerInterval);
-  document.getElementById('enrollRecordBtn').className = 'record-btn';
+  clearInterval(enrollTimerInterval);
+  document.getElementById('enrollRecordBtn').className   = 'record-btn';
   document.getElementById('enrollRecordBtn').textContent = '🎙️';
   document.getElementById('enrollTimerLabel').textContent = 'Recording saved — submit or re-record';
 }
 
 function playEnrollRecording() {
   if (!enrollBlob) return;
-  const url = URL.createObjectURL(enrollBlob);
-  const a = new Audio(url);
-  a.play();
+  new Audio(URL.createObjectURL(enrollBlob)).play();
 }
 
 async function submitEnrollment() {
@@ -471,11 +508,10 @@ async function submitEnrollment() {
   form.append('audio', enrollBlob, 'enrollment.webm');
 
   try {
-    const r = await fetch(API + '/api/enroll', { method: 'POST', body: form });
+    const r    = await fetch('/api/enroll', { method:'POST', body:form });
     const data = await r.json();
     if (r.ok) {
       setStatus(statusEl, `✓ Enrolled as "${data.user_id}" (${data.duration_s}s)`, 'success');
-      // Auto-fill session user ID
       document.getElementById('sessionUserId').value = userId;
     } else {
       setStatus(statusEl, `✗ ${data.detail || 'Enrollment failed'}`, 'error');
@@ -486,155 +522,264 @@ async function submitEnrollment() {
   document.getElementById('enrollSubmitBtn').disabled = false;
 }
 
-// ── Session recording ─────────────────────────────────────────────────────────
-let sessionRecording = false;
-let sessionStream = null;
-let sessionSeconds = 0;
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Session — Continuous VAD via AudioWorklet + WebSocket
+// ─────────────────────────────────────────────────────────────────────────────
+
+let sessionActive = false;
+let sessionAudioCtx = null;
+let sessionWorkletNode = null;
+let sessionMicSource = null;
+let sessionVisAnalyser = null, sessionVisFrame = null;
+let sessionWs = null;
+
+// The AudioWorkletProcessor (runs in a separate thread).
+// Collects 512 float32 samples, converts to int16, sends over port.
+const WORKLET_CODE = `
+class PCMStreamer extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._buf = [];
+  }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    for (let i = 0; i < ch.length; i++) this._buf.push(ch[i]);
+    while (this._buf.length >= 512) {
+      const slice = this._buf.splice(0, 512);
+      const out = new Int16Array(512);
+      for (let i = 0; i < 512; i++)
+        out[i] = Math.max(-32768, Math.min(32767, Math.round(slice[i] * 32767)));
+      this.port.postMessage(out.buffer, [out.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-streamer', PCMStreamer);
+`;
+
+function setVadState(state) {
+  const banner = document.getElementById('vadBanner');
+  const icon   = document.getElementById('vadIcon');
+  const label  = document.getElementById('vadLabel');
+  const sub    = document.getElementById('vadSub');
+
+  banner.className = `vad-banner ${state}`;
+  const map = {
+    offline:    { icon:'🔇', label:'Session not started',   sub:'Click Start Session to begin continuous listening' },
+    listening:  { icon:'👂', label:'Listening…',            sub:'Speak naturally — VAD will detect when you start talking' },
+    speaking:   { icon:'🗣️', label:'Speech detected',       sub:'VAD has detected voice activity — keep talking' },
+    processing: { icon:'⚙️', label:'Processing utterance…', sub:'Running STT → speaker ID → AI analysis' },
+  };
+  const m = map[state] || map.offline;
+  icon.textContent  = m.icon;
+  label.textContent = m.label;
+  sub.textContent   = m.sub;
+}
+
+function startSessionVisualiser(stream) {
+  const actx    = new AudioContext();
+  const src      = actx.createMediaStreamSource(stream);
+  sessionVisAnalyser = actx.createAnalyser();
+  sessionVisAnalyser.fftSize = 256;
+  src.connect(sessionVisAnalyser);
+
+  const canvas = document.getElementById('sessionWave');
+  const c = canvas.getContext('2d');
+  const buf = new Uint8Array(sessionVisAnalyser.frequencyBinCount);
+
+  function draw() {
+    sessionVisFrame = requestAnimationFrame(draw);
+    sessionVisAnalyser.getByteTimeDomainData(buf);
+    c.clearRect(0,0,canvas.width,canvas.height);
+    c.fillStyle='#111'; c.fillRect(0,0,canvas.width,canvas.height);
+    c.strokeStyle='#6366f1'; c.lineWidth=1.5; c.beginPath();
+    const sl = canvas.width / buf.length; let x=0;
+    buf.forEach((v,i)=>{ const y=(v/128)*canvas.height/2; i===0?c.moveTo(x,y):c.lineTo(x,y); x+=sl; });
+    c.stroke();
+  }
+  draw();
+}
+
+function stopSessionVisualiser() {
+  if(sessionVisFrame) cancelAnimationFrame(sessionVisFrame);
+  const canvas = document.getElementById('sessionWave');
+  const c = canvas.getContext('2d');
+  c.clearRect(0,0,canvas.width,canvas.height);
+  c.fillStyle='#111'; c.fillRect(0,0,canvas.width,canvas.height);
+}
 
 async function toggleSession() {
-  if (!sessionRecording) await startSession();
+  if (!sessionActive) await startSession();
   else stopSession();
 }
 
 async function startSession() {
-  sessionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  audioChunks = [];
-  mediaRecorder = new MediaRecorder(sessionStream);
-  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-  mediaRecorder.onstop = async () => {
-    sessionBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    sessionStream.getTracks().forEach(t => t.stop());
-    stopVisualiser('sessionWave');
+  const userId = document.getElementById('sessionUserId').value.trim() || 'wearer';
 
-    // Guard: must be at least 1 second
-    if (sessionSeconds < 1) {
-      document.getElementById('sessionTimerLabel').textContent = 'Too short — try again';
-      document.getElementById('sessionRecordBtn').textContent = '🎙️';
-      document.getElementById('sessionTimer').textContent = '0:00';
-      return;
-    }
-    await processAudio();
+  // 1. Mic access
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch(e) {
+    alert('Microphone access denied: ' + e.message);
+    return;
+  }
+
+  // 2. AudioContext at 16 kHz (browser resamples mic → 16kHz automatically)
+  sessionAudioCtx = new AudioContext({ sampleRate: 16000 });
+
+  // 3. Load worklet from Blob URL
+  const blob      = new Blob([WORKLET_CODE], { type:'application/javascript' });
+  const blobUrl   = URL.createObjectURL(blob);
+  await sessionAudioCtx.audioWorklet.addModule(blobUrl);
+  URL.revokeObjectURL(blobUrl);
+
+  // 4. Connect: mic → worklet
+  sessionMicSource   = sessionAudioCtx.createMediaStreamSource(stream);
+  sessionWorkletNode = new AudioWorkletNode(sessionAudioCtx, 'pcm-streamer');
+
+  // 5. WebSocket
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  sessionWs     = new WebSocket(`${wsProto}://${location.host}/ws/session/${encodeURIComponent(userId)}`);
+  sessionWs.binaryType = 'arraybuffer';
+
+  sessionWs.onopen = () => {
+    console.log('[WS] connected');
+    setVadState('listening');
+    // Only start streaming AFTER ws is open
+    sessionWorkletNode.port.onmessage = (e) => {
+      if (sessionWs.readyState === WebSocket.OPEN)
+        sessionWs.send(e.data);
+    };
+    sessionMicSource.connect(sessionWorkletNode);
+    // Keep worklet alive (connect to destination muted)
+    sessionWorkletNode.connect(sessionAudioCtx.destination);
   };
-  mediaRecorder.start();
-  sessionRecording = true;
-  sessionSeconds = 0;
 
-  document.getElementById('sessionRecordBtn').className = 'record-btn recording';
-  document.getElementById('sessionRecordBtn').textContent = '⏹';
-  document.getElementById('sessionTimerLabel').textContent = 'Recording… click to stop';
+  sessionWs.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleServerMessage(msg);
+  };
 
-  timerInterval = setInterval(() => {
-    sessionSeconds++;
-    document.getElementById('sessionTimer').textContent = formatTime(sessionSeconds);
-  }, 1000);
+  sessionWs.onerror = (e) => {
+    console.error('[WS] error', e);
+    setVadState('offline');
+  };
 
-  startVisualiser(sessionStream, 'sessionWave');
+  sessionWs.onclose = () => {
+    console.log('[WS] closed');
+    if (sessionActive) {
+      setVadState('offline');
+      stopSessionInternal();
+    }
+  };
+
+  // 6. Visualiser (separate AudioContext at native rate for display only)
+  startSessionVisualiser(stream);
+
+  sessionActive = true;
+  document.getElementById('sessionToggleBtn').className   = 'session-btn stop';
+  document.getElementById('sessionToggleBtn').textContent = '⏹ Stop Session';
 }
 
 function stopSession() {
-  if (!sessionRecording) return;
-  sessionRecording = false;
-  clearInterval(timerInterval);
-  mediaRecorder.stop();
-  document.getElementById('sessionRecordBtn').className = 'record-btn';
-  document.getElementById('sessionRecordBtn').textContent = '⏳';
-  document.getElementById('sessionTimerLabel').textContent = 'Processing…';
+  stopSessionInternal();
+  setVadState('offline');
+  document.getElementById('sessionToggleBtn').className   = 'session-btn start';
+  document.getElementById('sessionToggleBtn').textContent = '▶ Start Session';
 }
 
-async function processAudio() {
-  const userId = document.getElementById('sessionUserId').value.trim() || 'wearer';
-  log(`Sending audio (${sessionSeconds}s) for user=${userId}`);
+function stopSessionInternal() {
+  sessionActive = false;
 
-  const form = new FormData();
-  form.append('user_id', userId);
-  form.append('audio', sessionBlob, 'utterance.webm');
-
-  try {
-    const r = await fetch(API + '/api/process', { method: 'POST', body: form });
-    const data = await r.json();
-
-    if (!r.ok) {
-      log(`✗ Error: ${data.detail}`);
-      document.getElementById('sessionTimerLabel').textContent = 'Error — try again';
-      return;
-    }
-
-    // Transcript
-    document.getElementById('transcriptBox').textContent = data.transcript || '(no speech detected)';
-    log(`Route: ${data.route} | Wearer: ${data.wearer_label || 'unknown'}`);
-
-    // Analysis
-    if (data.analysis) {
-      showAnalysis(data.analysis, data.route);
-    } else {
-      document.getElementById('analysisCard').style.display = 'none';
-    }
-
-    // TTS
-    if (data.tts_audio) {
-      showTTS(data.tts_audio, data.tts_text);
-    } else {
-      document.getElementById('ttsCard').style.display = 'none';
-    }
-
-  } catch(e) {
-    log(`✗ Network error: ${e.message}`);
+  if (sessionWs) {
+    sessionWs.onclose = null;   // prevent double-cleanup
+    sessionWs.close();
+    sessionWs = null;
   }
 
-  document.getElementById('sessionRecordBtn').textContent = '🎙️';
-  document.getElementById('sessionTimerLabel').textContent = 'Hold to speak';
-  document.getElementById('sessionTimer').textContent = '0:00';
+  if (sessionMicSource) {
+    try { sessionMicSource.mediaStream.getTracks().forEach(t => t.stop()); } catch{}
+    sessionMicSource = null;
+  }
+  if (sessionWorkletNode) { try { sessionWorkletNode.disconnect(); } catch{} sessionWorkletNode = null; }
+  if (sessionAudioCtx)    { try { sessionAudioCtx.close(); }         catch{} sessionAudioCtx = null; }
+
+  stopSessionVisualiser();
 }
 
-function showAnalysis(a, routeDecision) {
-  const card = document.getElementById('analysisCard');
-  const content = document.getElementById('analysisContent');
-  card.style.display = 'block';
+// ── Incoming server messages ──────────────────────────────────────────────────
 
-  const routeClass = `route-${routeDecision}`;
-  const confidence = Math.round((a.confidence || 0) * 100);
-  const actEmoji = a.should_act ? '🟢 Yes' : '⚪ No';
+function handleServerMessage(msg) {
+  if (msg.type === 'vad_status') {
+    setVadState(msg.status);   // 'listening' | 'speaking' | 'processing'
+    return;
+  }
 
-  content.innerHTML = `
-    <div class="analysis-row">
-      <span class="analysis-label">Route</span>
-      <span class="analysis-value"><span class="route-badge ${routeClass}">${routeDecision}</span></span>
-    </div>
-    <div class="analysis-row">
-      <span class="analysis-label">Summary</span>
-      <span class="analysis-value">${a.summary || '—'}</span>
-    </div>
-    <div class="analysis-row">
-      <span class="analysis-label">Should act</span>
-      <span class="analysis-value">${actEmoji}</span>
-    </div>
-    <div class="analysis-row">
-      <span class="analysis-label">Confidence</span>
-      <span class="analysis-value">
-        ${confidence}%
-        <div class="confidence-bar"><div class="confidence-fill" style="width:${confidence}%"></div></div>
-      </span>
-    </div>
-    ${a.consent_prompt ? `
-    <div class="analysis-row">
-      <span class="analysis-label">Would say</span>
-      <span class="analysis-value" style="color:#c4b5fd;font-style:italic;">"${a.consent_prompt}"</span>
-    </div>` : ''}
-    ${a.memory_operations?.length ? `
-    <div class="analysis-row">
-      <span class="analysis-label">Memory ops</span>
-      <span class="analysis-value">${a.memory_operations.map(o => `[${o.op}] ${o.fact}`).join('<br>')}</span>
-    </div>` : ''}
-  `;
+  if (msg.type === 'error') {
+    addResultCard({ _error: msg.message });
+    return;
+  }
+
+  if (msg.type === 'result') {
+    addResultCard(msg);
+  }
 }
 
-function showTTS(b64wav, text) {
-  document.getElementById('ttsCard').style.display = 'block';
-  document.getElementById('ttsText').textContent = `"${text}"`;
-  const audio = document.getElementById('ttsAudio');
-  const blob  = new Blob([Uint8Array.from(atob(b64wav), c => c.charCodeAt(0))], { type: 'audio/wav' });
-  audio.src   = URL.createObjectURL(blob);
-  audio.play().catch(() => {});  // auto-play (may need user gesture)
+function addResultCard(data) {
+  const feed = document.getElementById('resultFeed');
+
+  if (data._error) {
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = `<div class="rc-time">${new Date().toLocaleTimeString()}</div>
+      <span class="status error">⚠ ${data._error}</span>`;
+    feed.prepend(card);
+    return;
+  }
+
+  const route      = data.route || 'SKIP';
+  const transcript = data.transcript || '(no speech)';
+  const analysis   = data.analysis;
+  const ttsText    = data.tts_text;
+  const ttsAudio   = data.tts_audio;
+  const wearer     = data.wearer_label || 'unknown';
+  const conf       = analysis ? Math.round((analysis.confidence || 0)*100) : null;
+
+  let html = `
+    <div class="rc-time">${new Date().toLocaleTimeString()} · wearer: ${wearer}</div>
+    <div class="rc-transcript">${escHtml(transcript)}</div>
+    <div class="rc-meta">
+      <span class="route-badge route-${route}">${route}</span>
+      ${conf !== null ? `<span style="font-size:12px;color:#555;">confidence ${conf}%</span>` : ''}
+    </div>`;
+
+  if (analysis && analysis.summary)
+    html += `<div style="font-size:13px;color:#aaa;margin-top:4px;">${escHtml(analysis.summary)}</div>`;
+
+  if (ttsText)
+    html += `<div class="rc-suggestion">💬 "${escHtml(ttsText)}"</div>`;
+
+  const card = document.createElement('div');
+  card.className = 'result-card';
+  card.innerHTML = html;
+  feed.prepend(card);   // newest at top
+
+  // Auto-play TTS
+  if (ttsAudio) {
+    const pcm  = Uint8Array.from(atob(ttsAudio), c => c.charCodeAt(0));
+    const blob = new Blob([pcm], { type:'audio/wav' });
+    const au   = new Audio(URL.createObjectURL(blob));
+    au.play().catch(() => {});
+  }
+
+  // Trim feed to last 20 results
+  while (feed.children.length > 20) feed.removeChild(feed.lastChild);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
 </body>

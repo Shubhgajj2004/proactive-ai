@@ -21,9 +21,10 @@ class Settings(BaseSettings):
     STT_MODEL: str = "gemini-3-flash-preview"
     # Example alternative: STT_MODEL = "gemini-2.0-flash"
 
-    # ── TTS (direct Gemini SDK) ──────────────────────────────────────────────
-    TTS_MODEL: str = "gemini-2.5-flash-preview-tts"
-    # Example alternative: TTS_MODEL = "gemini-2.0-flash-tts"
+    # ── TTS ──────────────────────────────────────────────────────────────────
+    TTS_PROVIDER: str = "piper"   # "piper" (on-device) | "gemini" (cloud)
+    TTS_MODEL: str = "gemini-2.5-flash-preview-tts"  # used only when TTS_PROVIDER=gemini
+    PIPER_MODEL_PATH: str = "models/tts/en_US-lessac-medium.onnx"
 
     # ── Embeddings (direct Google SDK) ──────────────────────────────────────
     EMBEDDING_MODEL: str = "gemini-embedding-001"  # 768-dim

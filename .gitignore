@@ -26,3 +26,7 @@ tests/fixtures/*.json
 .idea/
 .vscode/
 *.swp
+
+# Piper TTS model files (download via scripts/download_piper_voice.sh)
+models/tts/*.onnx
+models/tts/*.onnx.json

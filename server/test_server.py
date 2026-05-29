@@ -2,7 +2,10 @@
 Proactive AI — Test Server.
 
 A standalone FastAPI server for local testing of all pipeline blocks.
-Runs without Pipecat / Daily WebRTC — uses simple HTTP push-to-talk.
+Runs without Pipecat / Daily WebRTC.
+
+Live session uses WebSocket + server-side Silero VAD (continuous audio).
+Enrollment still uses HTTP multipart upload.
 
 Start:
     .venv/bin/python -m uvicorn server.test_server:app --reload --port 8000
@@ -12,6 +15,7 @@ Then open: http://localhost:8000
 import asyncio
 import base64
 import io
+import json
 import logging
 import os
 import tempfile
@@ -19,9 +23,9 @@ import wave
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -55,7 +59,7 @@ async def health():
     return {"status": "ok"}
 
 
-# ── Enrollment ────────────────────────────────────────────────────────────────
+# ── Enrollment (HTTP multipart) ───────────────────────────────────────────────
 
 @app.post("/api/enroll")
 async def enroll(
@@ -79,6 +83,9 @@ async def enroll(
 
     if waveform.shape[0] > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
+    if sr != 16000:
+        waveform = torchaudio.functional.resample(waveform, sr, 16000)
+        sr = 16000
     pcm = (waveform.squeeze().numpy() * 32767).astype("int16").tobytes()
 
     duration_s = waveform.shape[1] / sr
@@ -108,18 +115,13 @@ async def enroll(
     return {"status": "enrolled", "user_id": user_id, "duration_s": round(duration_s, 2)}
 
 
-# ── Full pipeline ─────────────────────────────────────────────────────────────
+# ── Shared pipeline ───────────────────────────────────────────────────────────
 
-@app.post("/api/process")
-async def process_audio(
-    user_id: str        = Form(...),
-    audio:   UploadFile = File(...),
-):
+async def _run_pipeline(pcm: bytes, user_id: str, sr: int = 16000) -> dict:
     """
-    Full pipeline: audio → STT → speaker ID → router → ambient analysis → TTS.
-    Returns JSON with transcript, analysis, and base64 TTS audio.
+    Full pipeline on a complete utterance blob (int16 PCM at 16kHz).
+    Returns a result dict suitable for JSON serialisation.
     """
-    import asyncpg, torchaudio
     from server.config import settings
     from server.pipeline.stt_processor import STTProcessor
     from server.pipeline.audio_segmenter import segment_audio
@@ -131,33 +133,22 @@ async def process_audio(
     from server.llm.factory import make_llm_client
     from server.tts.factory import make_tts_client
 
-    audio_bytes = await audio.read()
-
-    # Guard: browser sent empty blob (0s recording)
-    if len(audio_bytes) < 1000:
-        return JSONResponse({"transcript": "", "route": "SKIP", "reason": "recording too short"})
-
-    # Save with .webm suffix — browser MediaRecorder produces WebM, not WAV
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
-        f.write(audio_bytes)
-        tmp = f.name
-    try:
-        waveform, sr = torchaudio.load(tmp)
-    finally:
-        os.unlink(tmp)
-
-    if waveform.shape[0] > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)
-    pcm = (waveform.squeeze().numpy() * 32767).astype("int16").tobytes()
-
     # ── STT ───────────────────────────────────────────────────────────────────
-    logger.info("[PROCESS] STT starting user=%s", user_id)
-    segments = await STTProcessor().transcribe(pcm)
+    try:
+        segments = await STTProcessor().transcribe(pcm)
+    except Exception as e:
+        err = str(e)
+        if "nodename nor servname" in err or "ConnectError" in type(e).__name__ or "ConnectError" in err:
+            logger.error("[PIPELINE] STT network error: %s", err)
+            return {"error": "STT unavailable — check internet connection"}
+        logger.error("[PIPELINE] STT failed: %s", err)
+        return {"error": f"STT error: {err[:120]}"}
+
     if not segments:
-        return JSONResponse({"transcript": "", "route": "SKIP", "reason": "no speech"})
+        return {"route": "SKIP", "reason": "no speech"}
 
     full_transcript = " | ".join(f"{s.speaker_label}: {s.text}" for s in segments)
-    logger.info("[PROCESS] transcript: %s", full_transcript[:120])
+    logger.info("[PIPELINE] transcript: %s", full_transcript[:120])
 
     # ── Voiceprint matching ───────────────────────────────────────────────────
     enrolled = await _fetch_dvec(user_id, settings)
@@ -174,7 +165,7 @@ async def process_audio(
             top = ranked[0] if ranked else None
             if top and top.is_wearer == "True":
                 wearer_label = top.speaker_label
-                logger.info("[PROCESS] wearer=%s sim=%.3f", wearer_label, top.cosine_sim)
+                logger.info("[PIPELINE] wearer=%s sim=%.3f", wearer_label, top.cosine_sim)
 
     wearer_text = " ".join(
         s.text for s in segments if s.speaker_label == wearer_label
@@ -184,7 +175,7 @@ async def process_audio(
     governor = CostGovernor()
     governor.on_vad_start()
     decision = route(full_transcript, "AMBIENT", governor)
-    logger.info("[PROCESS] route=%s", decision)
+    logger.info("[PIPELINE] route=%s", decision)
 
     result: dict = {
         "transcript":   full_transcript,
@@ -207,9 +198,9 @@ async def process_audio(
             result["analysis"] = analysis.model_dump()
             if analysis.should_act and analysis.consent_prompt:
                 spoken = analysis.consent_prompt
-                logger.info("[PROCESS] proactive suggestion: %r", spoken)
+                logger.info("[PIPELINE] proactive suggestion: %r", spoken)
         except Exception as e:
-            logger.warning("[PROCESS] ambient failed: %s", e)
+            logger.warning("[PIPELINE] ambient failed: %s", e)
 
     elif decision == "REACTIVE":
         spoken = "Hey! I'm listening — what do you need?"
@@ -223,21 +214,97 @@ async def process_audio(
                 chunks.append(chunk)
             pcm_out = b"".join(chunks)
 
-            # Wrap in WAV for browser playback
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
-                wf.setframerate(24000)
+                wf.setframerate(tts.sample_rate)
                 wf.writeframes(pcm_out)
 
             result["tts_audio"] = base64.b64encode(buf.getvalue()).decode()
             result["tts_text"]  = spoken
         except Exception as e:
-            logger.warning("[PROCESS] TTS failed: %s", e)
+            logger.warning("[PIPELINE] TTS failed: %s", e)
 
-    return JSONResponse(result)
+    return result
 
+
+# ── WebSocket — continuous VAD session ───────────────────────────────────────
+
+@app.websocket("/ws/session/{user_id}")
+async def session_ws(websocket: WebSocket, user_id: str):
+    """
+    Continuous session endpoint.
+
+    Browser streams 1024-byte chunks (512 int16 samples @ 16 kHz) produced
+    by an AudioWorkletProcessor.  Server feeds them through Silero VAD.
+    When VAD emits a complete utterance the full pipeline runs and the result
+    is pushed back as a JSON message.
+
+    Message types sent TO the browser:
+      {"type": "vad_status", "status": "speaking"|"processing"|"listening"}
+      {"type": "result",     ...pipeline result fields...}
+      {"type": "error",      "message": "..."}
+    """
+    from server.pipeline.vad_processor import VadProcessor
+
+    await websocket.accept()
+    logger.info("[WS] connected  user=%s", user_id)
+
+    vad = VadProcessor()
+
+    async def handle_utterance(pcm: bytes) -> None:
+        """Run pipeline on a complete utterance and push result to browser."""
+        try:
+            await websocket.send_text(json.dumps({"type": "vad_status", "status": "processing"}))
+            result = await _run_pipeline(pcm, user_id)
+            await websocket.send_text(json.dumps({"type": "result", **result}))
+        except Exception as e:
+            logger.error("[WS] pipeline error: %s", e)
+            try:
+                await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+            except Exception:
+                pass
+        finally:
+            try:
+                await websocket.send_text(json.dumps({"type": "vad_status", "status": "listening"}))
+            except Exception:
+                pass
+
+    _speaking = False
+
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+
+            # Feed 1024-byte chunk (512 int16 samples) to VAD
+            utterance = vad.process_chunk(data)
+
+            # Detect start/end transitions to send status to UI
+            # VADProcessor logs internally; we infer state by watching the buffer
+            # A simple heuristic: if we just got an utterance, we were speaking
+            if utterance is not None:
+                _speaking = False
+                asyncio.create_task(handle_utterance(utterance))
+            else:
+                # Check whether VAD thinks we're in speech (accumulator active)
+                currently_speaking = vad._state.active
+                if currently_speaking and not _speaking:
+                    _speaking = True
+                    await websocket.send_text(json.dumps({"type": "vad_status", "status": "speaking"}))
+                elif not currently_speaking and _speaking:
+                    _speaking = False
+                    # Don't send "listening" here — the handle_utterance task
+                    # will send it after the pipeline completes (or VAD dropped it)
+                    await websocket.send_text(json.dumps({"type": "vad_status", "status": "listening"}))
+
+    except WebSocketDisconnect:
+        logger.info("[WS] disconnected  user=%s", user_id)
+    except Exception as e:
+        logger.error("[WS] error: %s", e)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _fetch_dvec(user_id: str, settings) -> np.ndarray | None:
     try:

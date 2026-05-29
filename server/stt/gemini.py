@@ -1,11 +1,15 @@
 """Gemini STT backend — the ONLY file that imports google-genai for STT."""
 import json
+import logging
+import time
 
 import google.genai as genai
 from google.genai import types
 
 from server.prompts.stt import TRANSCRIBE
 from server.stt.client import STTClient, STTSegment
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiSTTClient(STTClient):
@@ -26,10 +30,16 @@ class GeminiSTTClient(STTClient):
         audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav")
         text_part  = types.Part.from_text(text=TRANSCRIBE)
 
+        t0 = time.perf_counter()
         response = await self._client.aio.models.generate_content(
             model=self._model_name,
             contents=[audio_part, text_part],
         )
+        elapsed = time.perf_counter() - t0
+        if elapsed > 10:
+            logger.warning("[STT] Gemini took %.1fs — likely rate-limited (free tier quota)", elapsed)
+        else:
+            logger.info("[STT] Gemini latency: %.2fs", elapsed)
 
         # Track token usage
         if hasattr(response, "usage_metadata") and response.usage_metadata:
