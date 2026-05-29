@@ -127,6 +127,22 @@ async def run():
     conn = await asyncpg.connect(settings.DATABASE_URL)
     try:
         await conn.execute(SCHEMA)
+
+        # ── Column dimension guard: ensure d_vector is vector(256) ────────────
+        # If the table was created with the old vector(192) definition,
+        # drop and recreate the column (no data loss in dev — re-enroll needed).
+        row = await conn.fetchrow("""
+            SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) AS col_type
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            WHERE c.relname = 'user_voiceprints' AND a.attname = 'd_vector'
+        """)
+        if row and row["col_type"] != "vector(256)":
+            print(f"  migrating d_vector: {row['col_type']} → vector(256)")
+            await conn.execute("ALTER TABLE user_voiceprints DROP COLUMN d_vector")
+            await conn.execute("ALTER TABLE user_voiceprints ADD COLUMN d_vector vector(256) NOT NULL")
+            print("  ✓ d_vector updated to vector(256) — please re-enroll users")
+
         print("✓ Migrations complete — all tables exist")
     finally:
         await conn.close()
