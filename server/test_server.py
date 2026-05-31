@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import tempfile
+import uuid
 import wave
 from pathlib import Path
 
@@ -58,6 +59,34 @@ async def frontend():
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── Insights & context ────────────────────────────────────────────────────────
+
+@app.get("/api/context/{user_id}")
+async def get_context(user_id: str, limit: int = 50):
+    """Recent context summaries with extracted facts and tags, grouped by day."""
+    from server.ambient.context_writer import get_recent_summaries
+    rows = await get_recent_summaries(user_id, limit=limit)
+    # Deserialise JSONB strings
+    for r in rows:
+        for k in ("extracted_facts", "tags"):
+            if isinstance(r.get(k), str):
+                try:
+                    r[k] = json.loads(r[k])
+                except Exception:
+                    r[k] = []
+        if r.get("created_at"):
+            r["created_at"] = r["created_at"].isoformat()
+    return {"summaries": rows}
+
+
+@app.get("/api/memories/{user_id}")
+async def get_memories(user_id: str):
+    """All stored mem0 memories (facts) for this user."""
+    from server.ambient.memory_writer import get_all_memories
+    mems = await get_all_memories(user_id)
+    return {"memories": mems}
 
 
 # ── Enrollment (HTTP multipart) ───────────────────────────────────────────────
@@ -118,7 +147,7 @@ async def enroll(
 
 # ── Shared pipeline ───────────────────────────────────────────────────────────
 
-async def _run_pipeline(pcm: bytes, user_id: str, sr: int = 16000) -> dict:
+async def _run_pipeline(pcm: bytes, user_id: str, session_id: str, sr: int = 16000) -> dict:
     """
     Full pipeline on a complete utterance blob (int16 PCM at 16kHz).
     Returns a result dict suitable for JSON serialisation.
@@ -131,6 +160,8 @@ async def _run_pipeline(pcm: bytes, user_id: str, sr: int = 16000) -> dict:
     from server.pipeline.session_router import route
     from server.ambient.cost_governor import CostGovernor
     from server.ambient.processor import AmbientProcessor
+    from server.ambient.context_writer import write_context
+    from server.ambient.memory_writer import apply_memory_ops, search_memories
     from server.llm.factory import make_llm_client
     from server.tts.factory import make_tts_client
 
@@ -195,10 +226,29 @@ async def _run_pipeline(pcm: bytes, user_id: str, sr: int = 16000) -> dict:
         try:
             from server.tools.manifest import get_manifest
             capability_manifest = await get_manifest()
+
+            # Fetch relevant memories for this utterance
+            memories = await search_memories(wearer_text, user_id)
+
             analysis = await AmbientProcessor(
                 client=make_llm_client("ambient")
-            ).analyse(transcript=wearer_text, memories=[], capability_manifest=capability_manifest)
+            ).analyse(transcript=wearer_text, memories=memories, capability_manifest=capability_manifest)
             result["analysis"] = analysis.model_dump()
+
+            # Fire-and-forget: persist context summary + raw transcript
+            speaker_labels = list({s.speaker_label for s in segments})
+            asyncio.create_task(write_context(
+                analysis=analysis,
+                raw_transcript=full_transcript,
+                user_id=user_id,
+                session_id=session_id,
+                speaker_labels=speaker_labels,
+            ))
+
+            # Fire-and-forget: apply memory ops (add/update/delete facts)
+            if analysis.memory_operations:
+                asyncio.create_task(apply_memory_ops(analysis.memory_operations, user_id))
+
             if analysis.should_act and analysis.consent_prompt:
                 spoken = analysis.consent_prompt
                 logger.info("[PIPELINE] proactive suggestion: %r", spoken)
@@ -328,7 +378,8 @@ async def session_ws(websocket: WebSocket, user_id: str):
     from server.pipeline.vad_processor import VadProcessor
 
     await websocket.accept()
-    logger.info("[WS] connected  user=%s", user_id)
+    session_id = str(uuid.uuid4())
+    logger.info("[WS] connected  user=%s  session=%s", user_id, session_id)
 
     vad = VadProcessor()
 
@@ -349,7 +400,7 @@ async def session_ws(websocket: WebSocket, user_id: str):
                     consent_state["pending"] = None
                     logger.info("[WS] consent=%s — returning to AMBIENT", result["consent"])
             else:
-                result = await _run_pipeline(pcm, user_id)
+                result = await _run_pipeline(pcm, user_id, session_id)
                 # Enter consent mode if ambient made a high-confidence suggestion
                 analysis = result.get("analysis") or {}
                 if (

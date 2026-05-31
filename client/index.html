@@ -300,6 +300,7 @@
 <div class="tabs">
   <div class="tab active" onclick="switchTab('enroll')">① Enrollment</div>
   <div class="tab"        onclick="switchTab('session')">② Live Session</div>
+  <div class="tab"        onclick="switchTab('insights')">③ Insights</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════ -->
@@ -370,6 +371,52 @@
 
 </div>
 
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- PANEL 3: Insights                                          -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div id="panel-insights" class="panel">
+
+  <div class="user-bar">
+    <label>User ID</label>
+    <input id="insightsUserId" type="text" value="wearer" placeholder="your_username" />
+    <button class="btn btn-primary" onclick="loadInsights()" style="white-space:nowrap;">↻ Refresh</button>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Left: Today's summary -->
+    <div>
+      <div class="card">
+        <h2>Today's Context</h2>
+        <p>What the AI has observed and summarised from your conversations today.</p>
+        <div id="contextFeed" style="display:flex;flex-direction:column;gap:10px;">
+          <div class="small" style="color:#555;">Load insights to see context summaries.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Memories / facts -->
+    <div>
+      <div class="card">
+        <h2>Stored Memories</h2>
+        <p>Long-term facts the AI has learned about you via mem0.</p>
+        <div id="memoryFeed" style="display:flex;flex-direction:column;gap:8px;">
+          <div class="small" style="color:#555;">Load insights to see stored memories.</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:0;">
+        <h2>Extracted Facts</h2>
+        <p>Specific facts pulled from recent conversations.</p>
+        <div id="factsFeed" style="display:flex;flex-direction:column;gap:6px;">
+          <div class="small" style="color:#555;">Load insights to see extracted facts.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <script>
 // ─────────────────────────────────────────────────────────────────────────────
 // Utilities
@@ -377,9 +424,10 @@
 
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) =>
-    t.classList.toggle('active', ['enroll','session'][i] === name));
+    t.classList.toggle('active', ['enroll','session','insights'][i] === name));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
+  if (name === 'insights') loadInsights();
 }
 
 function setStatus(el, msg, type='') {
@@ -781,6 +829,121 @@ function addResultCard(data) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Insights tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function loadInsights() {
+  const userId = document.getElementById('insightsUserId').value.trim() || 'wearer';
+
+  // Sync user ID from session tab
+  const sessionId = document.getElementById('sessionUserId').value.trim();
+  if (sessionId) document.getElementById('insightsUserId').value = sessionId;
+
+  await Promise.all([loadContext(userId), loadMemories(userId)]);
+}
+
+async function loadContext(userId) {
+  const feed = document.getElementById('contextFeed');
+  feed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
+
+  try {
+    const r = await fetch(`/api/context/${encodeURIComponent(userId)}?limit=50`);
+    const data = await r.json();
+    const summaries = data.summaries || [];
+
+    if (!summaries.length) {
+      feed.innerHTML = '<div class="small" style="color:#555;">No context yet — start a live session to populate.</div>';
+      return;
+    }
+
+    // Group by date
+    const byDay = {};
+    for (const s of summaries) {
+      const day = s.created_at ? s.created_at.slice(0,10) : 'Unknown';
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(s);
+    }
+
+    feed.innerHTML = '';
+    for (const [day, items] of Object.entries(byDay)) {
+      const dayLabel = document.createElement('div');
+      dayLabel.style.cssText = 'font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.06em;margin-top:6px;margin-bottom:4px;';
+      dayLabel.textContent = day;
+      feed.appendChild(dayLabel);
+
+      for (const item of items) {
+        const card = document.createElement('div');
+        card.style.cssText = 'background:#111;border:1px solid #222;border-radius:8px;padding:12px 14px;';
+
+        const time = item.created_at ? item.created_at.slice(11,16) : '';
+        const tags = (item.tags || []).map(t => `<span style="background:#1e3a5f;color:#60a5fa;border-radius:10px;padding:2px 8px;font-size:11px;">${escHtml(t)}</span>`).join(' ');
+
+        let factsHtml = '';
+        if (item.extracted_facts && item.extracted_facts.length) {
+          factsHtml = `<div style="margin-top:8px;">${item.extracted_facts.map(f =>
+            `<div style="font-size:12px;color:#888;margin-top:3px;">· ${escHtml(f)}</div>`
+          ).join('')}</div>`;
+        }
+
+        card.innerHTML = `
+          <div style="font-size:11px;color:#444;margin-bottom:6px;">${time}</div>
+          <div style="font-size:13px;color:#ccc;line-height:1.5;">${escHtml(item.summary || '')}</div>
+          ${factsHtml}
+          ${tags ? `<div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">${tags}</div>` : ''}
+        `;
+        feed.appendChild(card);
+      }
+    }
+  } catch(e) {
+    feed.innerHTML = `<span class="status error">⚠ ${e.message}</span>`;
+  }
+}
+
+async function loadMemories(userId) {
+  const memFeed   = document.getElementById('memoryFeed');
+  const factsFeed = document.getElementById('factsFeed');
+  memFeed.innerHTML   = '<div class="small" style="color:#555;">Loading…</div>';
+  factsFeed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
+
+  try {
+    const r = await fetch(`/api/memories/${encodeURIComponent(userId)}`);
+    const data = await r.json();
+    const mems = data.memories || [];
+
+    if (!mems.length) {
+      memFeed.innerHTML   = '<div class="small" style="color:#555;">No memories yet — memories are learned from ambient conversations.</div>';
+      factsFeed.innerHTML = '<div class="small" style="color:#555;">No facts extracted yet.</div>';
+      return;
+    }
+
+    memFeed.innerHTML = '';
+    factsFeed.innerHTML = '';
+
+    for (const m of mems) {
+      const text = m.memory || m.text || JSON.stringify(m);
+      const ts   = m.created_at ? String(m.created_at).slice(0,10) : '';
+
+      // Memory card
+      const mc = document.createElement('div');
+      mc.style.cssText = 'background:#111;border:1px solid #1e3a1e;border-radius:8px;padding:10px 12px;';
+      mc.innerHTML = `
+        <div style="font-size:13px;color:#ccc;">${escHtml(text)}</div>
+        ${ts ? `<div style="font-size:11px;color:#444;margin-top:4px;">${ts}</div>` : ''}
+      `;
+      memFeed.appendChild(mc);
+
+      // Also show as fact chip
+      const fc = document.createElement('div');
+      fc.style.cssText = 'font-size:12px;color:#aaa;background:#141414;border:1px solid #222;border-radius:6px;padding:6px 10px;';
+      fc.textContent = text;
+      factsFeed.appendChild(fc);
+    }
+  } catch(e) {
+    memFeed.innerHTML = `<span class="status error">⚠ ${e.message}</span>`;
+  }
 }
 </script>
 </body>
