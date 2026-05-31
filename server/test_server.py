@@ -44,6 +44,59 @@ app.add_middleware(
 CLIENT_DIR = Path(__file__).parent.parent / "client"
 
 
+# ── Startup: eager model pre-loading ─────────────────────────────────────────
+
+@app.on_event("startup")
+async def _preload_models() -> None:
+    """
+    Warm up every ML model and heavy singleton before the first request arrives.
+
+    All model loads are CPU-bound / blocking.  They run in the default thread
+    pool (run_in_executor) so the asyncio event loop stays responsive and
+    uvicorn can answer health-checks while loading.
+
+    Without this, the FIRST WebSocket connection blocks the event loop for
+    several seconds while silero / WeSpeaker / Piper initialise, causing the
+    browser to drop the connection before any audio frames are exchanged.
+    """
+    loop = asyncio.get_event_loop()
+
+    # 1. Silero VAD (shared across all VadProcessor instances in this process)
+    try:
+        from server.pipeline.vad_processor import preload_model as vad_preload
+        await loop.run_in_executor(None, vad_preload)
+    except Exception as e:
+        logger.warning("[STARTUP] VAD preload failed (non-fatal): %s", e)
+
+    # 2. WeSpeaker ONNX speaker embedder
+    try:
+        from server.pipeline.speaker_embedder import _load_model as emb_preload
+        await loop.run_in_executor(None, emb_preload)
+        logger.info("[STARTUP] speaker embedder ready")
+    except Exception as e:
+        logger.warning("[STARTUP] embedder preload failed (non-fatal): %s", e)
+
+    # 3. Piper TTS voice model
+    try:
+        from server.config import settings as _s
+        from server.tts.piper import _load_voice as tts_preload
+        _model_path = str(Path(_s.PIPER_MODEL_PATH).expanduser().resolve())
+        await loop.run_in_executor(None, tts_preload, _model_path)
+        logger.info("[STARTUP] Piper TTS ready")
+    except Exception as e:
+        logger.warning("[STARTUP] TTS preload failed (non-fatal): %s", e)
+
+    # 4. mem0 Memory client (PostgreSQL connection pool + pgvector schema)
+    try:
+        from server.ambient.memory_writer import _get_memory as mem_preload
+        await loop.run_in_executor(None, mem_preload)
+        logger.info("[STARTUP] mem0 ready")
+    except Exception as e:
+        logger.warning("[STARTUP] mem0 preload failed (non-fatal): %s", e)
+
+    logger.info("[STARTUP] all models pre-loaded — server ready for first session")
+
+
 # ── Frontend ──────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)

@@ -30,6 +30,28 @@ FORCE_EMIT_MS = 60_000                       # hard cap: force-emit at 60s
 SILENCE_STOP_MS = 3000                       # passed to VADIterator directly
 MIN_SPEECH_MS_CONSENT = 300                  # short gate used when AWAITING_CONSENT ("yes"/"no")
 
+# ── Module-level silero model cache ───────────────────────────────────────────
+# Loaded once per process. Shared across all VadProcessor instances.
+# Call preload_model() at server startup to avoid blocking the asyncio event
+# loop on the first WebSocket connection.
+_silero_model = None
+
+
+def preload_model() -> None:
+    """Load (and cache) the silero model synchronously. Safe to call from a thread."""
+    global _silero_model
+    if _silero_model is None:
+        logger.info("[VAD] loading silero model …")
+        _silero_model = load_silero_vad()
+        logger.info("[VAD] silero model ready")
+
+
+def _get_silero_model():
+    """Return the cached silero model, loading it on first call."""
+    if _silero_model is None:
+        preload_model()
+    return _silero_model
+
 
 # ── Core processor ────────────────────────────────────────────────────────────
 
@@ -58,9 +80,8 @@ class VadProcessor:
         if vad_iterator is not None:
             self._vad = vad_iterator
         else:
-            model = load_silero_vad()
             self._vad = VADIterator(
-                model,
+                _get_silero_model(),   # reuses the process-level cached model
                 sampling_rate=SAMPLE_RATE,
                 threshold=threshold,
                 min_silence_duration_ms=SILENCE_STOP_MS,
