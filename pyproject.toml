@@ -10,6 +10,7 @@ dependencies = [
     "langgraph-checkpoint-postgres",
     "mem0ai",
     "asyncpg",
+    "psycopg2-binary",             # mem0 pgvector backend
     "redis[hiredis]",
     "google-genai",                  # ONLY in: stt/gemini.py, tts/gemini.py, embeddings/google.py
     "openai",                        # ONLY in: llm/openrouter.py (OpenRouter OpenAI-compat API)
