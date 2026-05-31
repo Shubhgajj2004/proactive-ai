@@ -382,13 +382,22 @@
     <button class="btn btn-primary" onclick="loadInsights()" style="white-space:nowrap;">↻ Refresh</button>
   </div>
 
+  <!-- Daily rollup banner -->
+  <div class="card" style="margin-bottom:16px;">
+    <h2>Today's Daily Summary</h2>
+    <p>Aggregated facts and topics the AI extracted from all of today's conversations.</p>
+    <div id="rollupFeed" style="margin-top:12px;">
+      <div class="small" style="color:#555;">Load insights to see today's rollup.</div>
+    </div>
+  </div>
+
   <div class="grid-2">
 
-    <!-- Left: Today's summary -->
+    <!-- Left: Per-utterance summaries -->
     <div>
       <div class="card">
         <h2>Today's Context</h2>
-        <p>What the AI has observed and summarised from your conversations today.</p>
+        <p>Per-utterance summaries from your conversations (most recent first).</p>
         <div id="contextFeed" style="display:flex;flex-direction:column;gap:10px;">
           <div class="small" style="color:#555;">Load insights to see context summaries.</div>
         </div>
@@ -399,7 +408,7 @@
     <div>
       <div class="card">
         <h2>Stored Memories</h2>
-        <p>Long-term facts the AI has learned about you via mem0.</p>
+        <p>Long-term facts the AI has learned about you (via mem0 — persists across sessions).</p>
         <div id="memoryFeed" style="display:flex;flex-direction:column;gap:8px;">
           <div class="small" style="color:#555;">Load insights to see stored memories.</div>
         </div>
@@ -407,7 +416,7 @@
 
       <div class="card" style="margin-top:0;">
         <h2>Extracted Facts</h2>
-        <p>Specific facts pulled from recent conversations.</p>
+        <p>Unique facts pulled from today's conversations (from context_summaries).</p>
         <div id="factsFeed" style="display:flex;flex-direction:column;gap:6px;">
           <div class="small" style="color:#555;">Load insights to see extracted facts.</div>
         </div>
@@ -836,18 +845,54 @@ function escHtml(s) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function loadInsights() {
-  const userId = document.getElementById('insightsUserId').value.trim() || 'wearer';
-
-  // Sync user ID from session tab
   const sessionId = document.getElementById('sessionUserId').value.trim();
   if (sessionId) document.getElementById('insightsUserId').value = sessionId;
+  const userId = document.getElementById('insightsUserId').value.trim() || 'wearer';
 
-  await Promise.all([loadContext(userId), loadMemories(userId)]);
+  await Promise.all([loadRollup(userId), loadContext(userId), loadMemories(userId)]);
+}
+
+async function loadRollup(userId) {
+  const feed = document.getElementById('rollupFeed');
+  feed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
+
+  try {
+    const r = await fetch(`/api/rollup/${encodeURIComponent(userId)}`);
+    const data = await r.json();
+
+    if (data.error) {
+      feed.innerHTML = `<span class="status error">⚠ ${escHtml(data.error)}</span>`;
+      return;
+    }
+
+    if (!data.count) {
+      feed.innerHTML = '<div class="small" style="color:#555;">No conversations yet today.</div>';
+      return;
+    }
+
+    const tagsHtml = (data.all_tags || []).map(t =>
+      `<span style="background:#1e3a5f;color:#60a5fa;border-radius:10px;padding:2px 8px;font-size:11px;">${escHtml(t)}</span>`
+    ).join(' ');
+
+    const factsHtml = (data.all_facts || []).map(f =>
+      `<div style="font-size:13px;color:#ccc;padding:4px 0;border-bottom:1px solid #1a1a1a;">· ${escHtml(f)}</div>`
+    ).join('');
+
+    feed.innerHTML = `
+      <div style="font-size:12px;color:#555;margin-bottom:10px;">${data.count} utterance${data.count>1?'s':''} recorded on ${escHtml(data.date)}</div>
+      ${tagsHtml ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;">${tagsHtml}</div>` : ''}
+      ${factsHtml || '<div class="small" style="color:#555;">No facts extracted yet.</div>'}
+    `;
+  } catch(e) {
+    feed.innerHTML = `<span class="status error">⚠ ${e.message}</span>`;
+  }
 }
 
 async function loadContext(userId) {
   const feed = document.getElementById('contextFeed');
+  const factsFeed = document.getElementById('factsFeed');
   feed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
+  factsFeed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
 
   try {
     const r = await fetch(`/api/context/${encodeURIComponent(userId)}?limit=50`);
@@ -856,10 +901,33 @@ async function loadContext(userId) {
 
     if (!summaries.length) {
       feed.innerHTML = '<div class="small" style="color:#555;">No context yet — start a live session to populate.</div>';
+      factsFeed.innerHTML = '<div class="small" style="color:#555;">No facts extracted yet.</div>';
       return;
     }
 
-    // Group by date
+    // Collect all unique facts across summaries for the Extracted Facts panel
+    const seenFacts = new Set();
+    const allFacts = [];
+    for (const s of summaries) {
+      for (const f of (s.extracted_facts || [])) {
+        if (!seenFacts.has(f)) { seenFacts.add(f); allFacts.push(f); }
+      }
+    }
+
+    // Populate Extracted Facts panel
+    if (allFacts.length) {
+      factsFeed.innerHTML = '';
+      for (const f of allFacts) {
+        const fc = document.createElement('div');
+        fc.style.cssText = 'font-size:12px;color:#aaa;background:#141414;border:1px solid #222;border-radius:6px;padding:6px 10px;';
+        fc.textContent = f;
+        factsFeed.appendChild(fc);
+      }
+    } else {
+      factsFeed.innerHTML = '<div class="small" style="color:#555;">No facts extracted yet.</div>';
+    }
+
+    // Group summaries by date for the context feed
     const byDay = {};
     for (const s of summaries) {
       const day = s.created_at ? s.created_at.slice(0,10) : 'Unknown';
@@ -903,10 +971,8 @@ async function loadContext(userId) {
 }
 
 async function loadMemories(userId) {
-  const memFeed   = document.getElementById('memoryFeed');
-  const factsFeed = document.getElementById('factsFeed');
-  memFeed.innerHTML   = '<div class="small" style="color:#555;">Loading…</div>';
-  factsFeed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
+  const memFeed = document.getElementById('memoryFeed');
+  memFeed.innerHTML = '<div class="small" style="color:#555;">Loading…</div>';
 
   try {
     const r = await fetch(`/api/memories/${encodeURIComponent(userId)}`);
@@ -914,19 +980,16 @@ async function loadMemories(userId) {
     const mems = data.memories || [];
 
     if (!mems.length) {
-      memFeed.innerHTML   = '<div class="small" style="color:#555;">No memories yet — memories are learned from ambient conversations.</div>';
-      factsFeed.innerHTML = '<div class="small" style="color:#555;">No facts extracted yet.</div>';
+      memFeed.innerHTML = '<div class="small" style="color:#555;">No memories yet — memories are learned from ambient conversations.</div>';
       return;
     }
 
     memFeed.innerHTML = '';
-    factsFeed.innerHTML = '';
 
     for (const m of mems) {
       const text = m.memory || m.text || JSON.stringify(m);
       const ts   = m.created_at ? String(m.created_at).slice(0,10) : '';
 
-      // Memory card
       const mc = document.createElement('div');
       mc.style.cssText = 'background:#111;border:1px solid #1e3a1e;border-radius:8px;padding:10px 12px;';
       mc.innerHTML = `
@@ -934,12 +997,6 @@ async function loadMemories(userId) {
         ${ts ? `<div style="font-size:11px;color:#444;margin-top:4px;">${ts}</div>` : ''}
       `;
       memFeed.appendChild(mc);
-
-      // Also show as fact chip
-      const fc = document.createElement('div');
-      fc.style.cssText = 'font-size:12px;color:#aaa;background:#141414;border:1px solid #222;border-radius:6px;padding:6px 10px;';
-      fc.textContent = text;
-      factsFeed.appendChild(fc);
     }
   } catch(e) {
     memFeed.innerHTML = `<span class="status error">⚠ ${e.message}</span>`;

@@ -89,6 +89,61 @@ async def get_memories(user_id: str):
     return {"memories": mems}
 
 
+@app.get("/api/rollup/{user_id}")
+async def get_daily_rollup(user_id: str):
+    """Aggregate today's context summaries into a daily rollup (facts + tags + summary count)."""
+    import asyncpg
+    from server.config import settings
+
+    try:
+        conn = await asyncpg.connect(settings.DATABASE_URL)
+        try:
+            rows = await conn.fetch(
+                """
+                SELECT summary, extracted_facts, tags, created_at
+                FROM context_summaries
+                WHERE user_id = $1
+                  AND created_at >= CURRENT_DATE
+                ORDER BY created_at ASC
+                """,
+                user_id,
+            )
+        finally:
+            await conn.close()
+    except Exception as e:
+        return {"error": str(e), "summaries": [], "all_facts": [], "all_tags": [], "count": 0}
+
+    summaries = []
+    all_facts: list[str] = []
+    all_tags: set[str] = set()
+
+    for r in rows:
+        row = dict(r)
+        for k in ("extracted_facts", "tags"):
+            if isinstance(row.get(k), str):
+                try:
+                    row[k] = json.loads(row[k])
+                except Exception:
+                    row[k] = []
+        if row.get("created_at"):
+            row["created_at"] = row["created_at"].isoformat()
+        summaries.append(row)
+        all_facts.extend(row.get("extracted_facts") or [])
+        all_tags.update(row.get("tags") or [])
+
+    # Deduplicate facts preserving order
+    seen: set[str] = set()
+    unique_facts = [f for f in all_facts if f not in seen and not seen.add(f)]  # type: ignore[func-returns-value]
+
+    return {
+        "date": str(__import__("datetime").date.today()),
+        "count": len(summaries),
+        "summaries": summaries,
+        "all_facts": unique_facts,
+        "all_tags": sorted(all_tags),
+    }
+
+
 # ── Enrollment (HTTP multipart) ───────────────────────────────────────────────
 
 @app.post("/api/enroll")
@@ -97,7 +152,7 @@ async def enroll(
     audio:   UploadFile = File(...),
 ):
     """Record wearer voice → extract 256-dim d-vector → store in PostgreSQL."""
-    import asyncpg, torchaudio
+    import asyncpg, subprocess
     from server.config import settings
     from server.pipeline.speaker_embedder import extract_embedding
 
@@ -107,18 +162,22 @@ async def enroll(
         f.write(audio_bytes)
         tmp = f.name
     try:
-        waveform, sr = torchaudio.load(tmp)
+        # Decode to 16kHz mono int16 PCM via ffmpeg — avoids torchcodec/libavutil dependency
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp, "-f", "s16le", "-ar", "16000", "-ac", "1", "-"],
+            capture_output=True,
+        )
     finally:
         os.unlink(tmp)
 
-    if waveform.shape[0] > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)
-    if sr != 16000:
-        waveform = torchaudio.functional.resample(waveform, sr, 16000)
-        sr = 16000
-    pcm = (waveform.squeeze().numpy() * 32767).astype("int16").tobytes()
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode(errors="replace")
+        raise HTTPException(500, f"Audio decode failed: {stderr[-300:]}")
 
-    duration_s = waveform.shape[1] / sr
+    pcm = proc.stdout
+    num_samples = len(pcm) // 2
+    sr = 16000
+    duration_s = num_samples / sr
     if duration_s < 2.0:
         raise HTTPException(400, f"Too short ({duration_s:.1f}s) — speak for at least 2 seconds")
 
