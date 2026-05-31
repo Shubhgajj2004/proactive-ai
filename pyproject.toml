@@ -11,11 +11,16 @@ dependencies = [
     "mem0ai",
     "asyncpg",
     "redis[hiredis]",
-    "google-generativeai",           # ONLY in: stt/gemini.py, tts/gemini.py, embeddings/google.py
+    "google-genai",                  # ONLY in: stt/gemini.py, tts/gemini.py, embeddings/google.py
     "openai",                        # ONLY in: llm/openrouter.py (OpenRouter OpenAI-compat API)
     "numpy",                         # audio_gain.py — PCM int16 amplification
     "mcp",
-    "speechbrain",                   # ECAPA-TDNN speaker embeddings
+    "piper-tts",                     # on-device TTS engine (ONNX, ~0.3s latency)
+    "silero-vad",                    # VAD: standalone silero-vad package
+    "torchcodec",                    # required by torchaudio 2.6+ for audio loading
+    "onnxruntime",                   # WeSpeaker ResNet34-LM ONNX inference
+    "kaldi-native-fbank",            # Kaldi Mel-filterbank features for WeSpeaker
+    "resampy",                       # audio resampling to 16kHz
     "torch",
     "torchaudio",
     "httpx",                         # MCP HTTP transport + Daily REST API calls

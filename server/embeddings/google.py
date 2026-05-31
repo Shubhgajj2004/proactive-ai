@@ -8,6 +8,7 @@ from server.embeddings.client import EmbeddingClient
 
 _DIMENSIONS = {
     "gemini-embedding-001":       768,
+    "gemini-embedding-1":         768,
     "gemini-embedding-2":         768,
     "gemini-embedding-2-preview": 768,
 }
