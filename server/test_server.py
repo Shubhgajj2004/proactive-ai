@@ -434,7 +434,7 @@ async def session_ws(websocket: WebSocket, user_id: str):
       {"type": "result",     ...pipeline result fields...}
       {"type": "error",      "message": "..."}
     """
-    from server.pipeline.vad_processor import VadProcessor
+    from server.pipeline.vad_processor import VadProcessor, MIN_SPEECH_MS, MIN_SPEECH_MS_CONSENT
 
     await websocket.accept()
     session_id = str(uuid.uuid4())
@@ -457,6 +457,7 @@ async def session_ws(websocket: WebSocket, user_id: str):
                 if result["consent"] in ("yes", "no"):
                     consent_state["mode"] = "AMBIENT"
                     consent_state["pending"] = None
+                    vad.min_speech_ms = MIN_SPEECH_MS  # restore normal gate
                     logger.info("[WS] consent=%s — returning to AMBIENT", result["consent"])
             else:
                 result = await _run_pipeline(pcm, user_id, session_id)
@@ -472,6 +473,7 @@ async def session_ws(websocket: WebSocket, user_id: str):
                         "proposed_action": analysis.get("proposed_action", "help you"),
                         "consent_prompt":  analysis.get("consent_prompt", ""),
                     }
+                    vad.min_speech_ms = MIN_SPEECH_MS_CONSENT  # accept short yes/no replies
                     logger.info("[WS] entering AWAITING_CONSENT — action: %s", consent_state["pending"]["proposed_action"])
 
             await websocket.send_text(json.dumps({"type": "result", **result}))

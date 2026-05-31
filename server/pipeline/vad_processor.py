@@ -25,9 +25,10 @@ SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 512                          # 32ms per chunk @ 16kHz
 CHUNK_MS = CHUNK_SAMPLES * 1000 // SAMPLE_RATE  # 32
 
-MIN_SPEECH_MS = 1500                         # drop utterances shorter than this
+MIN_SPEECH_MS = 1500                         # default minimum — override per-instance for consent mode
 FORCE_EMIT_MS = 60_000                       # hard cap: force-emit at 60s
 SILENCE_STOP_MS = 3000                       # passed to VADIterator directly
+MIN_SPEECH_MS_CONSENT = 300                  # short gate used when AWAITING_CONSENT ("yes"/"no")
 
 
 # ── Core processor ────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ class VadProcessor:
                 min_silence_duration_ms=SILENCE_STOP_MS,
             )
         self._state = _AccumulatorState()
+        self.min_speech_ms: int = MIN_SPEECH_MS  # mutable — lower for consent responses
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -122,10 +124,10 @@ class VadProcessor:
         # Subtract it to get approximate speech-only duration for the gate check.
         speech_ms = max(0, total_ms - SILENCE_STOP_MS)
 
-        if not forced and speech_ms < MIN_SPEECH_MS:
+        if not forced and speech_ms < self.min_speech_ms:
             logger.info(
                 "[VAD] DROP: speech ~%dms < %dms minimum — skipping STT",
-                speech_ms, MIN_SPEECH_MS,
+                speech_ms, self.min_speech_ms,
             )
             return None
 
