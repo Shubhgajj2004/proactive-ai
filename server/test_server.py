@@ -18,6 +18,7 @@ import io
 import json
 import logging
 import os
+import re
 import tempfile
 import wave
 from pathlib import Path
@@ -192,9 +193,11 @@ async def _run_pipeline(pcm: bytes, user_id: str, sr: int = 16000) -> dict:
     spoken = None
     if decision == "AMBIENT" and wearer_text.strip():
         try:
+            from server.tools.manifest import get_manifest
+            capability_manifest = await get_manifest()
             analysis = await AmbientProcessor(
                 client=make_llm_client("ambient")
-            ).analyse(transcript=wearer_text, memories=[], capability_manifest="")
+            ).analyse(transcript=wearer_text, memories=[], capability_manifest=capability_manifest)
             result["analysis"] = analysis.model_dump()
             if analysis.should_act and analysis.consent_prompt:
                 spoken = analysis.consent_prompt
@@ -229,6 +232,82 @@ async def _run_pipeline(pcm: bytes, user_id: str, sr: int = 16000) -> dict:
     return result
 
 
+# ── Consent detection ────────────────────────────────────────────────────────
+
+_YES = re.compile(
+    r"\b(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|please|absolutely|correct|right|proceed|sounds good)\b",
+    re.IGNORECASE,
+)
+_NO = re.compile(
+    r"\b(no|nope|nah|don't|dont|stop|cancel|never mind|nevermind|forget it|not now|skip)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_consent(transcript: str) -> str:
+    """Return 'yes', 'no', or 'unclear'."""
+    if _YES.search(transcript):
+        return "yes"
+    if _NO.search(transcript):
+        return "no"
+    return "unclear"
+
+
+async def _handle_consent(pcm: bytes, user_id: str, pending: dict) -> dict:
+    """
+    Transcribe the user's consent response and decide yes/no.
+    Returns a result dict like _run_pipeline.
+    """
+    from server.pipeline.stt_processor import STTProcessor
+    from server.tts.factory import make_tts_client
+
+    try:
+        segments = await STTProcessor().transcribe(pcm)
+    except Exception as e:
+        logger.warning("[CONSENT] STT failed: %s", e)
+        segments = []
+
+    transcript = " ".join(s.text for s in segments) if segments else ""
+    consent = _detect_consent(transcript)
+    logger.info("[CONSENT] transcript=%r  decision=%s", transcript, consent)
+
+    if consent == "yes":
+        spoken = f"Got it! I'll {pending['proposed_action']}."
+    elif consent == "no":
+        spoken = "No problem, I'll leave it."
+    else:
+        spoken = "Sorry, I didn't catch that — did you want me to go ahead? Just say yes or no."
+
+    tts_audio = None
+    try:
+        tts = make_tts_client()
+        chunks = []
+        async for chunk in tts.synthesize_stream(spoken):
+            chunks.append(chunk)
+        pcm_out = b"".join(chunks)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(tts.sample_rate)
+            wf.writeframes(pcm_out)
+        tts_audio = base64.b64encode(buf.getvalue()).decode()
+    except Exception as e:
+        logger.warning("[CONSENT] TTS failed: %s", e)
+
+    return {
+        "route":        "CONSENT",
+        "transcript":   f"[Consent] {transcript}",
+        "segments":     [s.model_dump() for s in segments],
+        "wearer_label": None,
+        "wearer_text":  transcript,
+        "analysis":     None,
+        "tts_text":     spoken,
+        "tts_audio":    tts_audio,
+        "consent":      consent,
+    }
+
+
 # ── WebSocket — continuous VAD session ───────────────────────────────────────
 
 @app.websocket("/ws/session/{user_id}")
@@ -253,11 +332,38 @@ async def session_ws(websocket: WebSocket, user_id: str):
 
     vad = VadProcessor()
 
+    # Consent state — set when ambient fires a high-confidence suggestion
+    consent_state: dict = {"mode": "AMBIENT", "pending": None}
+    # pending = {"proposed_action": str, "consent_prompt": str}
+
     async def handle_utterance(pcm: bytes) -> None:
         """Run pipeline on a complete utterance and push result to browser."""
         try:
             await websocket.send_text(json.dumps({"type": "vad_status", "status": "processing"}))
-            result = await _run_pipeline(pcm, user_id)
+
+            if consent_state["mode"] == "AWAITING_CONSENT":
+                result = await _handle_consent(pcm, user_id, consent_state["pending"])
+                # On yes/no clear the state; on unclear stay in AWAITING_CONSENT
+                if result["consent"] in ("yes", "no"):
+                    consent_state["mode"] = "AMBIENT"
+                    consent_state["pending"] = None
+                    logger.info("[WS] consent=%s — returning to AMBIENT", result["consent"])
+            else:
+                result = await _run_pipeline(pcm, user_id)
+                # Enter consent mode if ambient made a high-confidence suggestion
+                analysis = result.get("analysis") or {}
+                if (
+                    analysis.get("should_act")
+                    and analysis.get("confidence", 0) >= 0.75
+                    and analysis.get("consent_prompt")
+                ):
+                    consent_state["mode"] = "AWAITING_CONSENT"
+                    consent_state["pending"] = {
+                        "proposed_action": analysis.get("proposed_action", "help you"),
+                        "consent_prompt":  analysis.get("consent_prompt", ""),
+                    }
+                    logger.info("[WS] entering AWAITING_CONSENT — action: %s", consent_state["pending"]["proposed_action"])
+
             await websocket.send_text(json.dumps({"type": "result", **result}))
         except Exception as e:
             logger.error("[WS] pipeline error: %s", e)
